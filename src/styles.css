@@ -39,6 +39,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 button,
 .metric-card,
 .article-card,
@@ -59,6 +64,79 @@ button,
   background:
     linear-gradient(90deg, var(--mail-slate) 0 284px, transparent 284px),
     linear-gradient(180deg, #ffffff 0, var(--mail-paper) 360px);
+}
+
+.login-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(252, 206, 13, 0.22), transparent 26%),
+    linear-gradient(135deg, #222f3c 0%, var(--mail-slate) 48%, #101827 100%);
+}
+
+.login-panel {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 18px;
+  justify-items: start;
+  padding: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.22);
+}
+
+.login-panel > .frog-mascot {
+  justify-self: center;
+  --frog-size: 72px;
+}
+
+.login-panel h1 {
+  color: var(--mail-ink);
+  font-size: clamp(2rem, 5vw, 3.4rem);
+}
+
+.login-panel p {
+  margin: 0;
+  color: #56635b;
+  line-height: 1.5;
+}
+
+.login-panel form {
+  width: 100%;
+  display: grid;
+  gap: 12px;
+}
+
+.brand-block.dark {
+  color: var(--mail-ink);
+}
+
+.brand-block.dark span {
+  color: #66706a;
+}
+
+.login-error {
+  color: #b42318;
+  font-size: 0.86rem;
+}
+
+.demo-credentials {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.demo-credentials button {
+  min-height: 40px;
+  border: 1px solid var(--mail-line);
+  border-radius: 8px;
+  background: var(--mail-soft);
+  color: var(--mail-slate);
+  font-weight: 800;
 }
 
 .client-sidebar {
@@ -122,6 +200,34 @@ h3 {
 
 .brand-block p {
   font-weight: 800;
+}
+
+.role-card {
+  gap: 8px;
+  min-height: 44px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.role-card span {
+  flex: 1;
+  min-width: 0;
+  font-weight: 800;
+  font-size: 0.86rem;
+}
+
+.role-card button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: white;
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .brand-block span,
@@ -582,6 +688,30 @@ h3 {
 
 .network-badge.x {
   background: var(--mail-slate);
+}
+
+.network-badge.facebook {
+  background: #1877f2;
+}
+
+.network-badge.youtube {
+  background: #ff0033;
+}
+
+.network-badge.pinterest {
+  background: #bd081c;
+}
+
+.network-badge.whatsapp-business {
+  background: #25d366;
+}
+
+.network-badge.threads {
+  background: #111111;
+}
+
+.network-badge.twitch {
+  background: #9146ff;
 }
 
 .mission-strip {
@@ -1185,6 +1315,44 @@ textarea {
   font-weight: 800;
 }
 
+.admin-panel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--mail-line);
+  border-top: 3px solid rgba(252, 206, 13, 0.85);
+  border-radius: 8px;
+  box-shadow: var(--mail-shadow);
+}
+
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.network-catalog {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.network-catalog span {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--mail-slate);
+  background: var(--mail-soft);
+  border: 1px solid var(--mail-line);
+  font-weight: 800;
+  font-size: 0.84rem;
+}
+
 @keyframes growBar {
   from {
     width: 0;
@@ -1276,6 +1444,10 @@ textarea {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .admin-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .metric-card,
   .insight-card {
     grid-column: span 1;
@@ -1323,7 +1495,8 @@ textarea {
 
   .client-list,
   .composer-panel,
-  .dashboard-panel {
+  .dashboard-panel,
+  .admin-grid {
     grid-template-columns: 1fr;
   }
 
