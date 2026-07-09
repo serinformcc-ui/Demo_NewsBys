@@ -36,7 +36,7 @@ import {
 import "./styles.css";
 
 type Role = "cm" | "admin";
-type Network = "Instagram" | "LinkedIn" | "TikTok" | "Facebook" | "X" | "YouTube" | "Pinterest" | "WhatsApp Business" | "Threads" | "Twitch";
+type Network = "Instagram" | "LinkedIn" | "TikTok" | "Facebook" | "X" | "YouTube" | "Pinterest" | "WhatsApp Business" | "Threads" | "Bluesky";
 type PostStatus = "Programado" | "Borrador" | "Publicado";
 type Format = "Carrusel" | "Video" | "Post" | "Articulo";
 type Goal = "Alcance" | "Engagement" | "Leads" | "Comunidad";
@@ -98,6 +98,7 @@ type Article = {
 };
 
 const demoUsers: Array<User & { password: string }> = [
+  { email: "admin.pr@newsbys.demo", password: "AdminPR2026!", name: "Admin PR", role: "admin" },
   { email: "cm@newsbys.demo", password: "Demo2026!", name: "Laura CM", role: "cm" },
   { email: "admin@newsbys.demo", password: "Admin2026!", name: "Admin Newsbys", role: "admin" },
 ];
@@ -112,7 +113,7 @@ const networks: Network[] = [
   "Pinterest",
   "WhatsApp Business",
   "Threads",
-  "Twitch",
+  "Bluesky",
 ];
 
 const initialClients: Client[] = [
@@ -162,6 +163,7 @@ const initialClients: Client[] = [
       metricAccount("bys-li", "LinkedIn", "Bys", 14200, 5.2, 77200, 15),
       metricAccount("bys-x", "X", "@bysapp", 7800, 3.2, 31400, 19),
       metricAccount("bys-pinterest", "Pinterest", "Bys Ideas", 6100, 4.6, 25500, 9),
+      metricAccount("bys-bluesky", "Bluesky", "@bysapp.bsky.social", 4300, 5.9, 22400, 11),
     ],
   },
 ];
@@ -185,6 +187,25 @@ const articles: Article[] = [
 const suggestedTopics = ["IA generativa", "UGC", "social commerce", "marca empleadora", "video corto", "automatizacion", "atencion al cliente", "tendencias sectoriales"];
 const days = Array.from({ length: 35 }, (_, index) => index + 1);
 const browserLanguage = new Intl.DisplayNames(["es"], { type: "language" }).of(navigator.language.split("-")[0]) ?? "Espanol";
+
+function normalizeNetwork(network: string): Network {
+  if (network === "Twitch") return "Bluesky";
+  return networks.includes(network as Network) ? network as Network : "Instagram";
+}
+
+function normalizeClients(clients: Client[]) {
+  return clients.map((client) => ({
+    ...client,
+    accounts: [
+      ...client.accounts.map((account) => ({
+        ...account,
+        network: normalizeNetwork(account.network),
+        handle: account.network === "Twitch" && account.handle.toLowerCase().includes("twitch") ? account.handle.replace(/twitch/gi, "bluesky") : account.handle,
+      })),
+      ...(initialClients.find((initialClient) => initialClient.id === client.id)?.accounts.filter((initialAccount) => !client.accounts.some((account) => account.id === initialAccount.id)) ?? []),
+    ],
+  }));
+}
 
 function metricAccount(id: string, network: Network, handle: string, audience: number, engagement: number, reach: number, posts: number): SocialAccount {
   return {
@@ -230,21 +251,23 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat("es-ES", { notation: value > 9999 ? "compact" : "standard" }).format(value);
 }
 
-function useStoredState<T>(key: string, fallback: T) {
+function useStoredState<T>(key: string, fallback: T, normalize?: (value: T) => T) {
   const [value, setValue] = useState<T>(() => {
     try {
       const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) as T : fallback;
+      const parsed = raw ? JSON.parse(raw) as T : fallback;
+      return normalize ? normalize(parsed) : parsed;
     } catch {
-      return fallback;
+      return normalize ? normalize(fallback) : fallback;
     }
   });
 
   function update(next: T | ((current: T) => T)) {
     setValue((current) => {
       const resolved = typeof next === "function" ? (next as (current: T) => T)(current) : next;
-      localStorage.setItem(key, JSON.stringify(resolved));
-      return resolved;
+      const normalized = normalize ? normalize(resolved) : resolved;
+      localStorage.setItem(key, JSON.stringify(normalized));
+      return normalized;
     });
   }
 
@@ -253,7 +276,7 @@ function useStoredState<T>(key: string, fallback: T) {
 
 function App() {
   const [session, setSession] = useStoredState<User | null>("newsbys-session", null);
-  const [clients, setClients] = useStoredState<Client[]>("newsbys-clients", initialClients);
+  const [clients, setClients] = useStoredState<Client[]>("newsbys-clients", initialClients, normalizeClients);
   const [posts, setPosts] = useStoredState<ScheduledPost[]>("newsbys-posts", initialPosts);
   const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id ?? "serinfor");
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>(clients[0]?.accounts.map((account) => account.id) ?? []);
@@ -264,7 +287,7 @@ function App() {
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
   const [loginError, setLoginError] = useState("");
-  const [composer, setComposer] = useState({ title: "", day: "18", time: "10:00", format: "Carrusel" as Format, goal: "Engagement" as Goal });
+  const [composer, setComposer] = useState({ accountId: clients[0]?.accounts[0]?.id ?? "", title: "", day: "18", time: "10:00", format: "Carrusel" as Format, goal: "Engagement" as Goal });
   const [adminAccount, setAdminAccount] = useState({ clientId: "serinfor", network: "Instagram" as Network, handle: "" });
 
   if (!session) {
@@ -280,6 +303,8 @@ function App() {
   }
 
   const selectedClient = clients.find((client) => client.id === selectedClientId) ?? clients[0];
+  const isAdmin = session.role === "admin";
+  const isAdminPr = session.name === "Admin PR";
   const selectedAccounts = selectedClient.accounts.filter((account) => selectedAccountIds.includes(account.id));
   const visibleAccounts = selectedAccounts.length ? selectedAccounts : selectedClient.accounts;
   const clientPosts = posts.filter((item) => item.clientId === selectedClient.id);
@@ -309,6 +334,7 @@ function App() {
     setSelectedAccountIds(nextClient.accounts.map((account) => account.id));
     setSelectedTag("Todos");
     setAttachedFiles([]);
+    setComposer((current) => ({ ...current, accountId: nextClient.accounts[0]?.id ?? "" }));
     setAdminAccount((current) => ({ ...current, clientId: nextClient.id }));
   }
 
@@ -330,8 +356,8 @@ function App() {
     setAttachedFiles(Array.from(event.target.files ?? []).map((file) => file.name));
   }
 
-  function schedulePost() {
-    const account = visibleAccounts[0] ?? selectedClient.accounts[0];
+  function savePost(status: PostStatus) {
+    const account = selectedClient.accounts.find((item) => item.id === composer.accountId) ?? visibleAccounts[0] ?? selectedClient.accounts[0];
     if (!composer.title.trim() || !account) return;
     const nextPost: ScheduledPost = {
       id: `post-${Date.now()}`,
@@ -340,7 +366,7 @@ function App() {
       day: Number(composer.day),
       time: composer.time,
       title: composer.title.trim(),
-      status: "Programado",
+      status,
       format: composer.format,
       goal: composer.goal,
       files: attachedFiles,
@@ -351,7 +377,7 @@ function App() {
   }
 
   function addAccount() {
-    if (session.role !== "admin" || !adminAccount.handle.trim()) return;
+    if (!isAdmin || !adminAccount.handle.trim()) return;
     setClients((current) => current.map((client) => {
       if (client.id !== adminAccount.clientId) return client;
       const seed = client.accounts.length + 1;
@@ -370,7 +396,7 @@ function App() {
           <div className="brand-mark">NB</div>
           <div>
             <p>Newsbys Demo</p>
-            <span>{session.role === "admin" ? "Admin" : "Community Manager"}</span>
+            <span>{isAdminPr ? "Admin PR - acceso total" : isAdmin ? "Admin" : "Community Manager"}</span>
           </div>
         </div>
 
@@ -380,7 +406,7 @@ function App() {
           <button type="button" onClick={() => setSession(null)} aria-label="Cerrar sesion"><LogOut size={15} /></button>
         </div>
 
-        <button className="new-client-button" type="button" disabled={session.role !== "admin"}>
+        <button className="new-client-button" type="button" disabled={!isAdmin}>
           <Plus size={16} />
           Cliente
         </button>
@@ -400,7 +426,7 @@ function App() {
         <section className="game-card" aria-label="Progreso semanal">
           <div><Trophy size={18} /><strong>Nivel 4</strong></div>
           <div className="frog-mini" aria-label="Rana estratega"><FrogMascot compact /><strong>Rana estratega</strong></div>
-          <span>{session.role === "admin" ? "Demo lista para gerencia" : "Estrategia activa"}</span>
+          <span>{isAdminPr ? "Todas las funciones activas" : isAdmin ? "Demo lista para gerencia" : "Estrategia activa"}</span>
           <div className="progress-track"><i style={{ width: `${missionProgress}%` }} /></div>
           <small>{missionProgress}% de la mision semanal</small>
         </section>
@@ -436,7 +462,7 @@ function App() {
 
         <section className="mission-strip" aria-label="Misiones">
           <article><CheckCircle2 size={18} /><span>Login real de demo</span></article>
-          <article><Target size={18} /><span>{session.role === "admin" ? "Permisos admin activos" : "Permisos CM activos"}</span></article>
+          <article><Target size={18} /><span>{isAdminPr ? "Admin PR con acceso total" : isAdmin ? "Permisos admin activos" : "Permisos CM activos"}</span></article>
           <article><Flame size={18} /><span>Datos persistentes</span></article>
         </section>
 
@@ -474,7 +500,7 @@ function App() {
 
           <aside className="composer-panel">
             <div className="panel-heading compact"><div><p className="eyebrow">Nueva publicacion</p><h2>Programar contenido</h2></div><Sparkles size={19} /></div>
-            <label>Cuenta<select>{selectedClient.accounts.map((account) => <option key={account.id}>{account.network} - {account.handle}</option>)}</select></label>
+            <label>Cuenta<select value={composer.accountId} onChange={(event) => setComposer({ ...composer, accountId: event.target.value })}>{selectedClient.accounts.map((account) => <option key={account.id} value={account.id}>{account.network} - {account.handle}</option>)}</select></label>
             <label>Dia<input type="number" min="1" max="31" value={composer.day} onChange={(event) => setComposer({ ...composer, day: event.target.value })} /></label>
             <label>Hora<input type="time" value={composer.time} onChange={(event) => setComposer({ ...composer, time: event.target.value })} /></label>
             <label>Formato<select value={composer.format} onChange={(event) => setComposer({ ...composer, format: event.target.value as Format })}><option>Carrusel</option><option>Video</option><option>Post</option><option>Articulo</option></select></label>
@@ -482,14 +508,14 @@ function App() {
             <label>Copy<textarea value={composer.title} onChange={(event) => setComposer({ ...composer, title: event.target.value })} placeholder="Escribe el copy de la publicacion..." /></label>
             <label className="upload-drop"><input multiple type="file" accept="image/*,video/*,.pdf" onChange={handleFiles} /><UploadCloud size={20} /><span>Subir imagenes, videos o PDF</span><small>{attachedFiles.length ? `${attachedFiles.length} archivo(s) listo(s)` : "Arrastra o selecciona creatividades"}</small></label>
             {attachedFiles.length ? <div className="file-list">{attachedFiles.map((file) => <span key={file}><Paperclip size={14} />{file}</span>)}</div> : null}
-            <div className="composer-actions"><button className="ghost-button" type="button"><MessageSquareText size={16} />Borrador</button><button className="primary-button" type="button" onClick={schedulePost}><Send size={16} />Guardar</button></div>
+            <div className="composer-actions"><button className="ghost-button" type="button" onClick={() => savePost("Borrador")}><MessageSquareText size={16} />Borrador</button><button className="primary-button" type="button" onClick={() => savePost("Programado")}><Send size={16} />Guardar</button></div>
           </aside>
         </section>
 
         <nav className="bottom-tabs" aria-label="Analisis y descubrimiento">
           <button className={activePanel === "dashboard" ? "active" : ""} onClick={() => setActivePanel("dashboard")} type="button"><LayoutDashboard size={18} />Dashboard</button>
           <button className={activePanel === "descubrimiento" ? "active" : ""} onClick={() => setActivePanel("descubrimiento")} type="button"><Lightbulb size={18} />Descubrimiento</button>
-          {session.role === "admin" ? <button className={activePanel === "admin" ? "active" : ""} onClick={() => setActivePanel("admin")} type="button"><Settings size={18} />Admin</button> : null}
+          {isAdmin ? <button className={activePanel === "admin" ? "active" : ""} onClick={() => setActivePanel("admin")} type="button"><Settings size={18} />Admin</button> : null}
         </nav>
 
         {activePanel === "dashboard" ? (
@@ -507,8 +533,8 @@ function App() {
 }
 
 function LoginScreen({ error, onLogin }: { error: string; onLogin: (email: string, password: string) => void }) {
-  const [email, setEmail] = useState("admin@newsbys.demo");
-  const [password, setPassword] = useState("Admin2026!");
+  const [email, setEmail] = useState("admin.pr@newsbys.demo");
+  const [password, setPassword] = useState("AdminPR2026!");
   function submit(event: FormEvent) {
     event.preventDefault();
     onLogin(email, password);
@@ -522,7 +548,7 @@ function LoginScreen({ error, onLogin }: { error: string; onLogin: (email: strin
         </div>
         <FrogMascot />
         <h1>Demo privada para validar el proyecto</h1>
-        <p>Accede como CM o Admin para revisar programacion, analitica, descubrimiento y vinculacion de redes.</p>
+        <p>Accede como Admin PR para revisar todas las funcionalidades, o cambia a CM/Admin para validar permisos por rol.</p>
         <form onSubmit={submit}>
           <label>Email<input value={email} onChange={(event) => setEmail(event.target.value)} /></label>
           <label>Contrasena<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
@@ -530,6 +556,7 @@ function LoginScreen({ error, onLogin }: { error: string; onLogin: (email: strin
           <button className="primary-button" type="submit"><LockKeyhole size={16} />Entrar</button>
         </form>
         <div className="demo-credentials">
+          <button type="button" onClick={() => { setEmail("admin.pr@newsbys.demo"); setPassword("AdminPR2026!"); }}>Usar Admin PR</button>
           <button type="button" onClick={() => { setEmail("cm@newsbys.demo"); setPassword("Demo2026!"); }}>Usar CM</button>
           <button type="button" onClick={() => { setEmail("admin@newsbys.demo"); setPassword("Admin2026!"); }}>Usar Admin</button>
         </div>

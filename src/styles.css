@@ -126,7 +126,7 @@ button,
 .demo-credentials {
   width: 100%;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -710,8 +710,8 @@ h3 {
   background: #111111;
 }
 
-.network-badge.twitch {
-  background: #9146ff;
+.network-badge.bluesky {
+  background: #1185fe;
 }
 
 .mission-strip {
@@ -1534,5 +1534,9 @@ textarea {
 
   .article-modal {
     padding: 22px 18px;
+  }
+
+  .demo-credentials {
+    grid-template-columns: 1fr;
   }
 }
