@@ -47,6 +47,12 @@ type User = {
   role: Role;
 };
 
+type StoredUser = User & {
+  password: string;
+  createdAt: string;
+  source: "seed" | "registered";
+};
+
 type SocialAccount = {
   id: string;
   network: Network;
@@ -97,10 +103,22 @@ type Article = {
   idea: string;
 };
 
-const demoUsers: Array<User & { password: string }> = [
-  { email: "admin.pr@newsbys.demo", password: "AdminPR2026!", name: "Admin PR", role: "admin" },
-  { email: "cm@newsbys.demo", password: "Demo2026!", name: "Laura CM", role: "cm" },
-  { email: "admin@newsbys.demo", password: "Admin2026!", name: "Admin Newsbys", role: "admin" },
+type DemoDatabase = {
+  version: number;
+  users: StoredUser[];
+  clients: Client[];
+  posts: ScheduledPost[];
+  articles: Article[];
+  updatedAt: string;
+};
+
+const DB_KEY = "newsbys-demo-db";
+const DB_VERSION = 2;
+
+const seedUsers: StoredUser[] = [
+  { email: "admin.pr@newsbys.demo", password: "AdminPR2026!", name: "Admin PR", role: "admin", createdAt: "2026-07-09T09:00:00.000Z", source: "seed" },
+  { email: "cm@newsbys.demo", password: "Demo2026!", name: "Laura CM", role: "cm", createdAt: "2026-07-09T09:05:00.000Z", source: "seed" },
+  { email: "admin@newsbys.demo", password: "Admin2026!", name: "Admin Newsbys", role: "admin", createdAt: "2026-07-09T09:10:00.000Z", source: "seed" },
 ];
 
 const networks: Network[] = [
@@ -176,7 +194,7 @@ const initialPosts: ScheduledPost[] = [
   post("p5", "bys", "bys-li", 17, "10:00", "Como medir el rendimiento de una newsletter", "Publicado", "Articulo", "Engagement"),
 ];
 
-const articles: Article[] = [
+const initialArticles: Article[] = [
   article("a1", "email marketing", "Email automation benchmarks for B2B teams", "Marketing Brew", "EN", "Hoy", "6 min", "Las automatizaciones con mensajes segmentados mejoran la conversion cuando parten de eventos reales del usuario."),
   article("a2", "ciberseguridad", "Las pymes buscan guias simples de seguridad", "Wired Business", "ES", "Ayer", "7 min", "El contenido en formato checklist ayuda a convertir temas tecnicos en acciones comprensibles."),
   article("a3", "retail", "Retailers are turning stores into content studios", "The Business of Fashion", "EN", "Esta semana", "5 min", "Las tiendas fisicas funcionan como pequenos estudios de contenido para redes sociales."),
@@ -189,7 +207,7 @@ const days = Array.from({ length: 35 }, (_, index) => index + 1);
 const browserLanguage = new Intl.DisplayNames(["es"], { type: "language" }).of(navigator.language.split("-")[0]) ?? "Espanol";
 
 function normalizeNetwork(network: string): Network {
-  if (network === "Twitch") return "Bluesky";
+  if (network.toLowerCase() === "twitch") return "Bluesky";
   return networks.includes(network as Network) ? network as Network : "Instagram";
 }
 
@@ -200,11 +218,96 @@ function normalizeClients(clients: Client[]) {
       ...client.accounts.map((account) => ({
         ...account,
         network: normalizeNetwork(account.network),
-        handle: account.network === "Twitch" && account.handle.toLowerCase().includes("twitch") ? account.handle.replace(/twitch/gi, "bluesky") : account.handle,
+        handle: account.network.toLowerCase() === "twitch" && account.handle.toLowerCase().includes("twitch") ? account.handle.replace(/twitch/gi, "bluesky") : account.handle,
       })),
       ...(initialClients.find((initialClient) => initialClient.id === client.id)?.accounts.filter((initialAccount) => !client.accounts.some((account) => account.id === initialAccount.id)) ?? []),
     ],
   }));
+}
+
+function normalizeUsers(users: StoredUser[]) {
+  const merged = [...seedUsers];
+  users.forEach((user) => {
+    const normalized = { ...user, email: user.email.trim().toLowerCase() };
+    const index = merged.findIndex((item) => item.email === normalized.email);
+    if (index >= 0) merged[index] = { ...merged[index], ...normalized };
+    else merged.push(normalized);
+  });
+  return merged;
+}
+
+function normalizePosts(posts: ScheduledPost[], clients: Client[]) {
+  const accountIds = new Set(clients.flatMap((client) => client.accounts.map((account) => account.id)));
+  return posts
+    .filter((item) => accountIds.has(item.accountId))
+    .map((item) => ({
+      ...item,
+      day: Math.min(31, Math.max(1, Number(item.day) || 1)),
+      status: ["Programado", "Borrador", "Publicado"].includes(item.status) ? item.status : "Borrador",
+    }));
+}
+
+function seedDatabase(): DemoDatabase {
+  return {
+    version: DB_VERSION,
+    users: seedUsers,
+    clients: normalizeClients(initialClients),
+    posts: initialPosts,
+    articles: initialArticles,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function readLegacyData() {
+  try {
+    const clients = localStorage.getItem("newsbys-clients");
+    const posts = localStorage.getItem("newsbys-posts");
+    return {
+      clients: clients ? JSON.parse(clients) as Client[] : initialClients,
+      posts: posts ? JSON.parse(posts) as ScheduledPost[] : initialPosts,
+    };
+  } catch {
+    return { clients: initialClients, posts: initialPosts };
+  }
+}
+
+function normalizeDatabase(database: Partial<DemoDatabase>): DemoDatabase {
+  const legacy = readLegacyData();
+  const clients = normalizeClients(database.clients ?? legacy.clients);
+  return {
+    version: DB_VERSION,
+    users: normalizeUsers(database.users ?? seedUsers),
+    clients,
+    posts: normalizePosts(database.posts ?? legacy.posts, clients),
+    articles: database.articles?.length ? database.articles : initialArticles,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function useDemoDatabase() {
+  const [database, setDatabase] = useState<DemoDatabase>(() => {
+    try {
+      const raw = localStorage.getItem(DB_KEY);
+      const next = raw ? normalizeDatabase(JSON.parse(raw) as Partial<DemoDatabase>) : normalizeDatabase(seedDatabase());
+      localStorage.setItem(DB_KEY, JSON.stringify(next));
+      return next;
+    } catch {
+      const fallback = seedDatabase();
+      localStorage.setItem(DB_KEY, JSON.stringify(fallback));
+      return fallback;
+    }
+  });
+
+  function updateDatabase(next: DemoDatabase | ((current: DemoDatabase) => DemoDatabase)) {
+    setDatabase((current) => {
+      const resolved = typeof next === "function" ? (next as (current: DemoDatabase) => DemoDatabase)(current) : next;
+      const normalized = normalizeDatabase({ ...resolved, updatedAt: new Date().toISOString() });
+      localStorage.setItem(DB_KEY, JSON.stringify(normalized));
+      return normalized;
+    });
+  }
+
+  return [database, updateDatabase] as const;
 }
 
 function metricAccount(id: string, network: Network, handle: string, audience: number, engagement: number, reach: number, posts: number): SocialAccount {
@@ -275,9 +378,11 @@ function useStoredState<T>(key: string, fallback: T, normalize?: (value: T) => T
 }
 
 function App() {
+  const [database, setDatabase] = useDemoDatabase();
   const [session, setSession] = useStoredState<User | null>("newsbys-session", null);
-  const [clients, setClients] = useStoredState<Client[]>("newsbys-clients", initialClients, normalizeClients);
-  const [posts, setPosts] = useStoredState<ScheduledPost[]>("newsbys-posts", initialPosts);
+  const clients = database.clients;
+  const posts = database.posts;
+  const articles = database.articles;
   const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id ?? "serinfor");
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>(clients[0]?.accounts.map((account) => account.id) ?? []);
   const [activePanel, setActivePanel] = useState<"dashboard" | "descubrimiento" | "admin">("dashboard");
@@ -287,18 +392,36 @@ function App() {
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
   const [loginError, setLoginError] = useState("");
+  const [loginNotice, setLoginNotice] = useState("");
   const [composer, setComposer] = useState({ accountId: clients[0]?.accounts[0]?.id ?? "", title: "", day: "18", time: "10:00", format: "Carrusel" as Format, goal: "Engagement" as Goal });
   const [adminAccount, setAdminAccount] = useState({ clientId: "serinfor", network: "Instagram" as Network, handle: "" });
+  const [newClient, setNewClient] = useState({ name: "", sector: "", language: "Espanol" });
 
   if (!session) {
-    return <LoginScreen error={loginError} onLogin={(email, password) => {
-      const user = demoUsers.find((item) => item.email === email.trim().toLowerCase() && item.password === password);
+    return <LoginScreen users={database.users} error={loginError} notice={loginNotice} onLogin={(email, password) => {
+      const user = database.users.find((item) => item.email === email.trim().toLowerCase() && item.password === password);
       if (!user) {
         setLoginError("Credenciales demo no validas.");
+        setLoginNotice("");
         return;
       }
       setSession({ email: user.email, name: user.name, role: user.role });
       setLoginError("");
+      setLoginNotice("");
+    }} onRegister={(user) => {
+      const email = user.email.trim().toLowerCase();
+      if (database.users.some((item) => item.email === email)) {
+        setLoginError("Ese email ya existe. Vuelve al login e inicia sesion.");
+        setLoginNotice("");
+        return false;
+      }
+      setDatabase((current) => ({
+        ...current,
+        users: [...current.users, { ...user, email, createdAt: new Date().toISOString(), source: "registered" }],
+      }));
+      setLoginError("");
+      setLoginNotice("Usuario creado. Ahora inicia sesion con tus credenciales.");
+      return true;
     }} />;
   }
 
@@ -319,6 +442,12 @@ function App() {
   const conversionRate = totalReach > 0 ? (totalClicks / totalReach) * 100 : 0;
   const filteredArticles = articles.filter((item) => selectedClient.tags.includes(item.tag) && (selectedTag === "Todos" || selectedTag === item.tag));
   const missionProgress = Math.min(92, 46 + accountPosts.length * 8 + selectedClient.tags.length * 5);
+  const databaseStats = {
+    users: database.users.length,
+    clients: clients.length,
+    accounts: clients.reduce((sum, client) => sum + client.accounts.length, 0),
+    posts: posts.length,
+  };
 
   const contentMix = useMemo(() => {
     const formats: Format[] = ["Carrusel", "Video", "Post", "Articulo"];
@@ -347,7 +476,10 @@ function App() {
 
   function addTopic(topic = newTag.trim()) {
     if (!topic) return;
-    setClients((current) => current.map((client) => client.id === selectedClient.id && !client.tags.includes(topic) ? { ...client, tags: [...client.tags, topic] } : client));
+    setDatabase((current) => ({
+      ...current,
+      clients: current.clients.map((client) => client.id === selectedClient.id && !client.tags.includes(topic) ? { ...client, tags: [...client.tags, topic] } : client),
+    }));
     setSelectedTag(topic);
     setNewTag("");
   }
@@ -371,22 +503,52 @@ function App() {
       goal: composer.goal,
       files: attachedFiles,
     };
-    setPosts((current) => [...current, nextPost]);
+    setDatabase((current) => ({ ...current, posts: [...current.posts, nextPost] }));
     setComposer((current) => ({ ...current, title: "" }));
     setAttachedFiles([]);
   }
 
   function addAccount() {
     if (!isAdmin || !adminAccount.handle.trim()) return;
-    setClients((current) => current.map((client) => {
-      if (client.id !== adminAccount.clientId) return client;
-      const seed = client.accounts.length + 1;
-      return {
-        ...client,
-        accounts: [...client.accounts, metricAccount(`acc-${Date.now()}`, adminAccount.network, adminAccount.handle.trim(), 3400 + seed * 1900, 3.1 + seed * 0.4, 18000 + seed * 9100, 4 + seed)],
-      };
+    setDatabase((current) => ({
+      ...current,
+      clients: current.clients.map((client) => {
+        if (client.id !== adminAccount.clientId) return client;
+        const seed = client.accounts.length + 1;
+        return {
+          ...client,
+          accounts: [...client.accounts, metricAccount(`acc-${Date.now()}`, adminAccount.network, adminAccount.handle.trim(), 3400 + seed * 1900, 3.1 + seed * 0.4, 18000 + seed * 9100, 4 + seed)],
+        };
+      }),
     }));
     setAdminAccount((current) => ({ ...current, handle: "" }));
+  }
+
+function addClient() {
+    if (!isAdmin || !newClient.name.trim()) return;
+    const id = newClient.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || `cliente-${Date.now()}`;
+    const client: Client = {
+      id: `${id}-${Date.now()}`,
+      name: newClient.name.trim(),
+      sector: newClient.sector.trim() || "Nuevo cliente",
+      language: newClient.language.trim() || "Espanol",
+      tags: ["marca", "contenido"],
+      accounts: [],
+    };
+    setDatabase((current) => ({ ...current, clients: [...current.clients, client] }));
+    setNewClient({ name: "", sector: "", language: "Espanol" });
+    setSelectedClientId(client.id);
+    setSelectedAccountIds([]);
+    setComposer((current) => ({ ...current, accountId: "" }));
+    setAdminAccount((current) => ({ ...current, clientId: client.id }));
+    setActivePanel("admin");
+  }
+
+  function resetDemoDatabase() {
+    const next = seedDatabase();
+    setDatabase(next);
+    setSession(null);
+    setLoginNotice("Base demo reiniciada. Entra de nuevo con Admin PR.");
   }
 
   return (
@@ -406,7 +568,7 @@ function App() {
           <button type="button" onClick={() => setSession(null)} aria-label="Cerrar sesion"><LogOut size={15} /></button>
         </div>
 
-        <button className="new-client-button" type="button" disabled={!isAdmin}>
+          <button className="new-client-button" type="button" disabled={!isAdmin} onClick={() => setActivePanel("admin")}>
           <Plus size={16} />
           Cliente
         </button>
@@ -466,10 +628,18 @@ function App() {
           <article><Flame size={18} /><span>Datos persistentes</span></article>
         </section>
 
+        <section className="database-strip" aria-label="Estado de base de datos">
+          <strong>BBDD local activa</strong>
+          <span>{databaseStats.users} usuarios</span>
+          <span>{databaseStats.clients} clientes</span>
+          <span>{databaseStats.accounts} cuentas</span>
+          <span>{databaseStats.posts} publicaciones</span>
+        </section>
+
         <section className="planning-layout">
           <div className="calendar-panel">
             <div className="panel-heading">
-              <div><p className="eyebrow">Julio 2026</p><h2>Calendario editorial</h2></div>
+              <div><p className="eyebrow">Julio 2026 - {accountPosts.length} registros desde BBDD</p><h2>Calendario editorial</h2></div>
               <button className="ghost-button" type="button"><CalendarDays size={17} />Mes<ChevronDown size={15} /></button>
             </div>
 
@@ -491,10 +661,10 @@ function App() {
             </div>
 
             <div className="agenda-list">
-              {accountPosts.map((item) => {
+              {accountPosts.length ? accountPosts.map((item) => {
                 const account = selectedClient.accounts.find((candidate) => candidate.id === item.accountId);
                 return <article key={item.id} className="agenda-item"><div><strong>{item.day}</strong><small>Jul</small></div><span><b>{item.title}</b><em>{item.time} - {account?.network} - {item.goal}</em></span></article>;
-              })}
+              }) : <article className="empty-agenda"><CalendarDays size={20} /><span>No hay publicaciones guardadas para estas cuentas.</span></article>}
             </div>
           </div>
 
@@ -523,7 +693,7 @@ function App() {
         ) : activePanel === "descubrimiento" ? (
           <DiscoveryPanel selectedClient={selectedClient} selectedTag={selectedTag} setSelectedTag={setSelectedTag} newTag={newTag} setNewTag={setNewTag} addTopic={addTopic} filteredArticles={filteredArticles} translateArticles={translateArticles} setTranslateArticles={setTranslateArticles} setSelectedArticle={setSelectedArticle} />
         ) : (
-          <AdminPanel clients={clients} networks={networks} adminAccount={adminAccount} setAdminAccount={setAdminAccount} addAccount={addAccount} />
+          <AdminPanel clients={clients} networks={networks} databaseStats={databaseStats} newClient={newClient} setNewClient={setNewClient} adminAccount={adminAccount} setAdminAccount={setAdminAccount} addClient={addClient} addAccount={addAccount} resetDemoDatabase={resetDemoDatabase} />
         )}
       </section>
 
@@ -532,12 +702,40 @@ function App() {
   );
 }
 
-function LoginScreen({ error, onLogin }: { error: string; onLogin: (email: string, password: string) => void }) {
+function LoginScreen({ users, error, notice, onLogin, onRegister }: {
+  users: StoredUser[];
+  error: string;
+  notice: string;
+  onLogin: (email: string, password: string) => void;
+  onRegister: (user: Omit<StoredUser, "createdAt" | "source">) => boolean;
+}) {
+  const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("admin.pr@newsbys.demo");
   const [password, setPassword] = useState("AdminPR2026!");
+  const [registerData, setRegisterData] = useState({ name: "", email: "", password: "", role: "cm" as Role });
+  const [registerError, setRegisterError] = useState("");
   function submit(event: FormEvent) {
     event.preventDefault();
     onLogin(email, password);
+  }
+  function submitRegister(event: FormEvent) {
+    event.preventDefault();
+    if (!registerData.name.trim() || !registerData.email.trim() || registerData.password.length < 6) {
+      setRegisterError("Completa nombre, email y una contrasena de al menos 6 caracteres.");
+      return;
+    }
+    const created = onRegister({
+      name: registerData.name.trim(),
+      email: registerData.email,
+      password: registerData.password,
+      role: registerData.role,
+    });
+    if (!created) return;
+    setEmail(registerData.email.trim().toLowerCase());
+    setPassword("");
+    setRegisterData({ name: "", email: "", password: "", role: "cm" });
+    setRegisterError("");
+    setMode("login");
   }
   return (
     <main className="login-shell">
@@ -549,17 +747,37 @@ function LoginScreen({ error, onLogin }: { error: string; onLogin: (email: strin
         <FrogMascot />
         <h1>Demo privada para validar el proyecto</h1>
         <p>Accede como Admin PR para revisar todas las funcionalidades, o cambia a CM/Admin para validar permisos por rol.</p>
-        <form onSubmit={submit}>
-          <label>Email<input value={email} onChange={(event) => setEmail(event.target.value)} /></label>
-          <label>Contrasena<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-          {error ? <strong className="login-error">{error}</strong> : null}
-          <button className="primary-button" type="submit"><LockKeyhole size={16} />Entrar</button>
-        </form>
-        <div className="demo-credentials">
-          <button type="button" onClick={() => { setEmail("admin.pr@newsbys.demo"); setPassword("AdminPR2026!"); }}>Usar Admin PR</button>
-          <button type="button" onClick={() => { setEmail("cm@newsbys.demo"); setPassword("Demo2026!"); }}>Usar CM</button>
-          <button type="button" onClick={() => { setEmail("admin@newsbys.demo"); setPassword("Admin2026!"); }}>Usar Admin</button>
+        <div className="login-tabs">
+          <button className={mode === "login" ? "active" : ""} type="button" onClick={() => setMode("login")}>Login</button>
+          <button className={mode === "register" ? "active" : ""} type="button" onClick={() => setMode("register")}>Registro</button>
         </div>
+        {mode === "login" ? (
+          <>
+            <form onSubmit={submit}>
+              <label>Email<input value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+              <label>Contrasena<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+              {notice ? <strong className="login-notice">{notice}</strong> : null}
+              {error ? <strong className="login-error">{error}</strong> : null}
+              <button className="primary-button" type="submit"><LockKeyhole size={16} />Entrar</button>
+            </form>
+            <div className="demo-credentials">
+              <button type="button" onClick={() => { setEmail("admin.pr@newsbys.demo"); setPassword("AdminPR2026!"); }}>Usar Admin PR</button>
+              <button type="button" onClick={() => { setEmail("cm@newsbys.demo"); setPassword("Demo2026!"); }}>Usar CM</button>
+              <button type="button" onClick={() => { setEmail("admin@newsbys.demo"); setPassword("Admin2026!"); }}>Usar Admin</button>
+            </div>
+            <small className="login-db-note">{users.length} usuarios guardados en BBDD local.</small>
+          </>
+        ) : (
+          <form onSubmit={submitRegister}>
+            <label>Nombre<input value={registerData.name} onChange={(event) => setRegisterData({ ...registerData, name: event.target.value })} placeholder="Ej. Maria CM" /></label>
+            <label>Email<input value={registerData.email} onChange={(event) => setRegisterData({ ...registerData, email: event.target.value })} placeholder="tu@email.com" /></label>
+            <label>Contrasena<input type="password" value={registerData.password} onChange={(event) => setRegisterData({ ...registerData, password: event.target.value })} /></label>
+            <label>Rol<select value={registerData.role} onChange={(event) => setRegisterData({ ...registerData, role: event.target.value as Role })}><option value="cm">CM</option><option value="admin">Admin</option></select></label>
+            {registerError ? <strong className="login-error">{registerError}</strong> : null}
+            {error ? <strong className="login-error">{error}</strong> : null}
+            <button className="primary-button" type="submit"><Users size={16} />Crear usuario y volver al login</button>
+          </form>
+        )}
       </section>
     </main>
   );
@@ -628,16 +846,33 @@ function DiscoveryPanel({ selectedClient, selectedTag, setSelectedTag, newTag, s
   );
 }
 
-function AdminPanel({ clients, networks, adminAccount, setAdminAccount, addAccount }: {
+function AdminPanel({ clients, networks, databaseStats, newClient, setNewClient, adminAccount, setAdminAccount, addClient, addAccount, resetDemoDatabase }: {
   clients: Client[];
   networks: Network[];
+  databaseStats: { users: number; clients: number; accounts: number; posts: number };
+  newClient: { name: string; sector: string; language: string };
+  setNewClient: (value: { name: string; sector: string; language: string }) => void;
   adminAccount: { clientId: string; network: Network; handle: string };
   setAdminAccount: (value: { clientId: string; network: Network; handle: string }) => void;
+  addClient: () => void;
   addAccount: () => void;
+  resetDemoDatabase: () => void;
 }) {
   return (
     <section className="admin-panel">
       <div className="panel-heading"><div><p className="eyebrow">Admin</p><h2>Vincular redes y revisar clientes</h2></div><Settings size={19} /></div>
+      <div className="db-summary">
+        <span><Users size={16} />{databaseStats.users} usuarios</span>
+        <span>{databaseStats.clients} clientes</span>
+        <span>{databaseStats.accounts} cuentas</span>
+        <span>{databaseStats.posts} publicaciones</span>
+      </div>
+      <div className="admin-grid client-grid">
+        <label>Nuevo cliente<input value={newClient.name} onChange={(event) => setNewClient({ ...newClient, name: event.target.value })} placeholder="Nombre del cliente" /></label>
+        <label>Sector<input value={newClient.sector} onChange={(event) => setNewClient({ ...newClient, sector: event.target.value })} placeholder="Ej. SaaS B2B" /></label>
+        <label>Idioma<input value={newClient.language} onChange={(event) => setNewClient({ ...newClient, language: event.target.value })} /></label>
+        <button className="primary-button" type="button" onClick={addClient}><Plus size={16} />Crear cliente</button>
+      </div>
       <div className="admin-grid">
         <label>Cliente<select value={adminAccount.clientId} onChange={(event) => setAdminAccount({ ...adminAccount, clientId: event.target.value })}>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
         <label>Red social<select value={adminAccount.network} onChange={(event) => setAdminAccount({ ...adminAccount, network: event.target.value as Network })}>{networks.map((network) => <option key={network}>{network}</option>)}</select></label>
@@ -645,6 +880,7 @@ function AdminPanel({ clients, networks, adminAccount, setAdminAccount, addAccou
         <button className="primary-button" type="button" onClick={addAccount}><Plus size={16} />Vincular cuenta</button>
       </div>
       <div className="network-catalog">{networks.map((network) => <span key={network}><NetworkBadge network={network} />{network}</span>)}</div>
+      <button className="ghost-button danger-lite" type="button" onClick={resetDemoDatabase}>Reiniciar BBDD demo</button>
     </section>
   );
 }

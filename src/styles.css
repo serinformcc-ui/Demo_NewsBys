@@ -123,6 +123,41 @@ button,
   font-size: 0.86rem;
 }
 
+.login-notice {
+  color: #067647;
+  font-size: 0.86rem;
+}
+
+.login-tabs {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+  border-radius: 8px;
+  background: var(--mail-soft);
+  border: 1px solid var(--mail-line);
+}
+
+.login-tabs button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--mail-slate);
+  font-weight: 900;
+}
+
+.login-tabs button.active {
+  background: var(--mail-yellow);
+  color: var(--mail-ink);
+}
+
+.login-db-note {
+  color: #66706a;
+  font-weight: 800;
+}
+
 .demo-credentials {
   width: 100%;
   display: grid;
@@ -741,6 +776,39 @@ h3 {
   border-color: #d7dee8;
 }
 
+.database-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid var(--mail-line);
+  box-shadow: 0 10px 24px rgba(10, 26, 61, 0.06);
+}
+
+.database-strip strong,
+.database-strip span {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 0.82rem;
+  font-weight: 900;
+}
+
+.database-strip strong {
+  color: var(--mail-ink);
+  background: #fff7cc;
+}
+
+.database-strip span {
+  color: var(--mail-slate);
+  background: var(--mail-soft);
+}
+
 .planning-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
@@ -873,6 +941,19 @@ h3 {
   display: grid;
   gap: 3px;
   min-width: 0;
+}
+
+.empty-agenda {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px dashed #b8c2ce;
+  border-radius: 8px;
+  color: var(--mail-slate);
+  background: var(--mail-soft);
+  font-weight: 800;
 }
 
 .composer-panel {
@@ -1333,6 +1414,33 @@ textarea {
   align-items: end;
 }
 
+.client-grid {
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--mail-soft);
+  border: 1px solid var(--mail-line);
+}
+
+.db-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.db-summary span {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--mail-slate);
+  background: #fff7cc;
+  border: 1px solid #f3de74;
+  font-weight: 900;
+  font-size: 0.83rem;
+}
+
 .network-catalog {
   display: flex;
   flex-wrap: wrap;
@@ -1351,6 +1459,13 @@ textarea {
   border: 1px solid var(--mail-line);
   font-weight: 800;
   font-size: 0.84rem;
+}
+
+.danger-lite {
+  justify-self: start;
+  color: #9f1b1b;
+  border-color: #fecaca;
+  background: #fff5f5;
 }
 
 @keyframes growBar {
