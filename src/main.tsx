@@ -134,10 +134,11 @@ type DemoDatabase = {
 };
 
 const DB_KEY = "newsbys-demo-db";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 const seedUsers: StoredUser[] = [
   { email: "admin.pr@newsbys.demo", password: "AdminPR2026!", name: "Admin PR", role: "admin", createdAt: "2026-07-09T09:00:00.000Z", source: "seed" },
+  { email: "naiara@serinfor.net", password: "Naiara2026!", name: "Naiara Serinfor", role: "cm", createdAt: "2026-07-15T09:00:00.000Z", source: "seed" },
   { email: "cm@newsbys.demo", password: "Demo2026!", name: "Laura CM", role: "cm", createdAt: "2026-07-09T09:05:00.000Z", source: "seed" },
   { email: "admin@newsbys.demo", password: "Admin2026!", name: "Admin Newsbys", role: "admin", createdAt: "2026-07-09T09:10:00.000Z", source: "seed" },
 ];
@@ -156,6 +157,20 @@ const networks: Network[] = [
 ];
 
 const initialClients: Client[] = [
+  {
+    id: "dayana",
+    name: "Dayana",
+    sector: "Influencer lifestyle",
+    language: "Espanol",
+    tags: ["influencer", "lifestyle", "colaboraciones"],
+    ownerEmail: "naiara@serinfor.net",
+    assignedUserEmails: ["naiara@serinfor.net"],
+    accounts: [
+      metricAccount("dayana-ig-main", "Instagram", "@dayana", 48400, 7.3, 232000, 31),
+      metricAccount("dayana-ig-style", "Instagram", "@dayana.style", 22100, 6.5, 118000, 18),
+      metricAccount("dayana-linkedin", "LinkedIn", "Dayana Creator", 6100, 4.8, 27400, 7),
+    ],
+  },
   {
     id: "serinfor",
     name: "Serinfor",
@@ -301,7 +316,7 @@ function normalizeNetwork(network: string): Network {
 }
 
 function normalizeClients(clients: Client[]) {
-  return clients.map((client) => ({
+  const normalized = clients.map((client) => ({
     ...client,
     ownerEmail: client.ownerEmail ?? initialClients.find((initialClient) => initialClient.id === client.id)?.ownerEmail ?? "admin.pr@newsbys.demo",
     assignedUserEmails: Array.from(new Set([
@@ -318,6 +333,10 @@ function normalizeClients(clients: Client[]) {
       ...(initialClients.find((initialClient) => initialClient.id === client.id)?.accounts.filter((initialAccount) => !client.accounts.some((account) => account.id === initialAccount.id)) ?? []),
     ],
   }));
+  return [
+    ...normalized,
+    ...initialClients.filter((initialClient) => !normalized.some((client) => client.id === initialClient.id)),
+  ];
 }
 
 function normalizeUsers(users: StoredUser[]) {
