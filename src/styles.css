@@ -1364,6 +1364,41 @@ textarea {
   animation: modalIn 220ms ease both;
 }
 
+.schedule-modal {
+  width: min(820px, 100%);
+  max-height: min(820px, 92vh);
+  overflow: auto;
+  position: relative;
+  display: grid;
+  gap: 16px;
+  border-radius: 8px;
+  padding: 24px;
+  background: #ffffff;
+  border-top: 4px solid var(--mail-yellow);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.24);
+  animation: modalIn 220ms ease both;
+}
+
+.schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.schedule-upload {
+  min-height: 116px;
+}
+
+.schedule-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.schedule-actions button {
+  min-width: 180px;
+}
+
 .article-modal h2 {
   font-size: 1.7rem;
   line-height: 1.12;
@@ -1649,6 +1684,22 @@ textarea {
 
   .article-modal {
     padding: 22px 18px;
+  }
+
+  .schedule-modal {
+    padding: 22px 18px;
+  }
+
+  .schedule-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .schedule-actions {
+    flex-direction: column;
+  }
+
+  .schedule-actions button {
+    width: 100%;
   }
 
   .demo-credentials {

@@ -80,6 +80,7 @@ type ScheduledPost = {
   id: string;
   clientId: string;
   accountId: string;
+  date?: string;
   day: number;
   time: string;
   title: string;
@@ -101,6 +102,16 @@ type Article = {
   readTime: string;
   body: string[];
   idea: string;
+};
+
+type ScheduleDraft = {
+  clientId: string;
+  accountId: string;
+  date: string;
+  time: string;
+  title: string;
+  format: Format;
+  goal: Goal;
 };
 
 type DemoDatabase = {
@@ -205,6 +216,12 @@ const initialArticles: Article[] = [
 const suggestedTopics = ["IA generativa", "UGC", "social commerce", "marca empleadora", "video corto", "automatizacion", "atencion al cliente", "tendencias sectoriales"];
 const days = Array.from({ length: 35 }, (_, index) => index + 1);
 const browserLanguage = new Intl.DisplayNames(["es"], { type: "language" }).of(navigator.language.split("-")[0]) ?? "Espanol";
+const defaultScheduleDate = "2026-07-18";
+
+function dayFromDate(date: string) {
+  const day = Number(date.split("-")[2]);
+  return Math.min(31, Math.max(1, Number.isFinite(day) ? day : 1));
+}
 
 function normalizeNetwork(network: string): Network {
   if (network.toLowerCase() === "twitch") return "Bluesky";
@@ -243,6 +260,7 @@ function normalizePosts(posts: ScheduledPost[], clients: Client[]) {
     .map((item) => ({
       ...item,
       day: Math.min(31, Math.max(1, Number(item.day) || 1)),
+      date: item.date ?? `2026-07-${String(Math.min(31, Math.max(1, Number(item.day) || 1))).padStart(2, "0")}`,
       status: ["Programado", "Borrador", "Publicado"].includes(item.status) ? item.status : "Borrador",
     }));
 }
@@ -391,6 +409,17 @@ function App() {
   const [newTag, setNewTag] = useState("");
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
+  const [isScheduleModalOpen, setScheduleModalOpen] = useState(false);
+  const [scheduleFiles, setScheduleFiles] = useState<string[]>([]);
+  const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>({
+    clientId: clients[0]?.id ?? "",
+    accountId: clients[0]?.accounts[0]?.id ?? "",
+    date: defaultScheduleDate,
+    time: "10:00",
+    title: "",
+    format: "Carrusel" as Format,
+    goal: "Engagement" as Goal,
+  });
   const [loginError, setLoginError] = useState("");
   const [loginNotice, setLoginNotice] = useState("");
   const [composer, setComposer] = useState({ accountId: clients[0]?.accounts[0]?.id ?? "", title: "", day: "18", time: "10:00", format: "Carrusel" as Format, goal: "Engagement" as Goal });
@@ -426,6 +455,8 @@ function App() {
   }
 
   const selectedClient = clients.find((client) => client.id === selectedClientId) ?? clients[0];
+  const scheduleClient = clients.find((client) => client.id === scheduleDraft.clientId) ?? selectedClient;
+  const scheduleAccounts = scheduleClient?.accounts ?? [];
   const isAdmin = session.role === "admin";
   const isAdminPr = session.name === "Admin PR";
   const selectedAccounts = selectedClient.accounts.filter((account) => selectedAccountIds.includes(account.id));
@@ -488,6 +519,58 @@ function App() {
     setAttachedFiles(Array.from(event.target.files ?? []).map((file) => file.name));
   }
 
+  function handleScheduleFiles(event: ChangeEvent<HTMLInputElement>) {
+    setScheduleFiles(Array.from(event.target.files ?? []).map((file) => file.name));
+  }
+
+  function openScheduleModal() {
+    const client = selectedClient ?? clients[0];
+    setScheduleDraft((current) => ({
+      ...current,
+      clientId: client.id,
+      accountId: visibleAccounts[0]?.id ?? client.accounts[0]?.id ?? "",
+      date: current.date || defaultScheduleDate,
+    }));
+    setScheduleFiles([]);
+    setScheduleModalOpen(true);
+  }
+
+  function changeScheduleClient(clientId: string) {
+    const client = clients.find((item) => item.id === clientId) ?? clients[0];
+    setScheduleDraft((current) => ({
+      ...current,
+      clientId: client.id,
+      accountId: client.accounts[0]?.id ?? "",
+    }));
+  }
+
+  function saveScheduledModal(status: PostStatus) {
+    const client = clients.find((item) => item.id === scheduleDraft.clientId);
+    const account = client?.accounts.find((item) => item.id === scheduleDraft.accountId);
+    if (!client || !account || !scheduleDraft.title.trim()) return;
+    const nextPost: ScheduledPost = {
+      id: `post-${Date.now()}`,
+      clientId: client.id,
+      accountId: account.id,
+      date: scheduleDraft.date,
+      day: dayFromDate(scheduleDraft.date),
+      time: scheduleDraft.time,
+      title: scheduleDraft.title.trim(),
+      status,
+      format: scheduleDraft.format,
+      goal: scheduleDraft.goal,
+      files: scheduleFiles,
+    };
+    setDatabase((current) => ({ ...current, posts: [...current.posts, nextPost] }));
+    setSelectedClientId(client.id);
+    setSelectedAccountIds([account.id]);
+    setComposer((current) => ({ ...current, accountId: account.id, day: String(nextPost.day), time: scheduleDraft.time, title: "" }));
+    setScheduleDraft((current) => ({ ...current, title: "" }));
+    setScheduleFiles([]);
+    setActivePanel("dashboard");
+    setScheduleModalOpen(false);
+  }
+
   function savePost(status: PostStatus) {
     const account = selectedClient.accounts.find((item) => item.id === composer.accountId) ?? visibleAccounts[0] ?? selectedClient.accounts[0];
     if (!composer.title.trim() || !account) return;
@@ -495,6 +578,7 @@ function App() {
       id: `post-${Date.now()}`,
       clientId: selectedClient.id,
       accountId: account.id,
+      date: `2026-07-${String(Number(composer.day)).padStart(2, "0")}`,
       day: Number(composer.day),
       time: composer.time,
       title: composer.title.trim(),
@@ -606,7 +690,7 @@ function addClient() {
           </div>
           <div className="top-actions">
             <button className="icon-button" aria-label="Buscar"><Search size={18} /></button>
-            <button className="primary-button pulse-button" type="button"><Plus size={17} />Programar</button>
+            <button className="primary-button pulse-button" type="button" onClick={openScheduleModal}><Plus size={17} />Programar</button>
           </div>
         </header>
 
@@ -698,7 +782,97 @@ function addClient() {
       </section>
 
       {selectedArticle ? <ArticleModal article={selectedArticle} translateArticles={translateArticles} onClose={() => setSelectedArticle(null)} /> : null}
+      {isScheduleModalOpen ? (
+        <ScheduleModal
+          clients={clients}
+          scheduleDraft={scheduleDraft}
+          scheduleClient={scheduleClient}
+          scheduleAccounts={scheduleAccounts}
+          scheduleFiles={scheduleFiles}
+          setScheduleDraft={setScheduleDraft}
+          changeScheduleClient={changeScheduleClient}
+          handleScheduleFiles={handleScheduleFiles}
+          onClose={() => setScheduleModalOpen(false)}
+          onSave={saveScheduledModal}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function ScheduleModal({ clients, scheduleDraft, scheduleClient, scheduleAccounts, scheduleFiles, setScheduleDraft, changeScheduleClient, handleScheduleFiles, onClose, onSave }: {
+  clients: Client[];
+  scheduleDraft: ScheduleDraft;
+  scheduleClient: Client;
+  scheduleAccounts: SocialAccount[];
+  scheduleFiles: string[];
+  setScheduleDraft: React.Dispatch<React.SetStateAction<ScheduleDraft>>;
+  changeScheduleClient: (clientId: string) => void;
+  handleScheduleFiles: (event: ChangeEvent<HTMLInputElement>) => void;
+  onClose: () => void;
+  onSave: (status: PostStatus) => void;
+}) {
+  const canSave = Boolean(scheduleDraft.title.trim() && scheduleDraft.accountId);
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Programar contenido">
+      <article className="schedule-modal">
+        <button className="icon-button close-button" aria-label="Cerrar programacion" type="button" onClick={onClose}><CloseIcon size={18} /></button>
+        <div className="panel-heading compact">
+          <div>
+            <p className="eyebrow">Nueva publicacion</p>
+            <h2>Programar contenido</h2>
+          </div>
+          <CalendarDays size={20} />
+        </div>
+
+        <div className="schedule-grid">
+          <label>Cliente
+            <select value={scheduleDraft.clientId} onChange={(event) => changeScheduleClient(event.target.value)}>
+              {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+            </select>
+          </label>
+          <label>Cuenta
+            <select value={scheduleDraft.accountId} onChange={(event) => setScheduleDraft((current) => ({ ...current, accountId: event.target.value }))} disabled={!scheduleAccounts.length}>
+              {scheduleAccounts.length ? scheduleAccounts.map((account) => <option key={account.id} value={account.id}>{account.network} - {account.handle}</option>) : <option>Primero vincula una cuenta</option>}
+            </select>
+          </label>
+          <label>Fecha
+            <input type="date" value={scheduleDraft.date} onChange={(event) => setScheduleDraft((current) => ({ ...current, date: event.target.value }))} />
+          </label>
+          <label>Hora
+            <input type="time" value={scheduleDraft.time} onChange={(event) => setScheduleDraft((current) => ({ ...current, time: event.target.value }))} />
+          </label>
+          <label>Formato
+            <select value={scheduleDraft.format} onChange={(event) => setScheduleDraft((current) => ({ ...current, format: event.target.value as Format }))}>
+              <option>Carrusel</option><option>Video</option><option>Post</option><option>Articulo</option>
+            </select>
+          </label>
+          <label>Objetivo
+            <select value={scheduleDraft.goal} onChange={(event) => setScheduleDraft((current) => ({ ...current, goal: event.target.value as Goal }))}>
+              <option>Alcance</option><option>Engagement</option><option>Leads</option><option>Comunidad</option>
+            </select>
+          </label>
+        </div>
+
+        <label>Copy
+          <textarea value={scheduleDraft.title} onChange={(event) => setScheduleDraft((current) => ({ ...current, title: event.target.value }))} placeholder={`Escribe el copy para ${scheduleClient.name}...`} />
+        </label>
+
+        <label className="upload-drop schedule-upload">
+          <input multiple type="file" accept="image/*" onChange={handleScheduleFiles} />
+          <UploadCloud size={20} />
+          <span>Subir imagen</span>
+          <small>{scheduleFiles.length ? `${scheduleFiles.length} imagen(es) lista(s)` : "Selecciona una creatividad para la publicacion"}</small>
+        </label>
+        {scheduleFiles.length ? <div className="file-list">{scheduleFiles.map((file) => <span key={file}><Paperclip size={14} />{file}</span>)}</div> : null}
+
+        <div className="schedule-actions">
+          <button className="ghost-button" type="button" onClick={() => onSave("Borrador")} disabled={!canSave}><MessageSquareText size={16} />Guardar borrador</button>
+          <button className="primary-button" type="button" onClick={() => onSave("Programado")} disabled={!canSave}><Send size={16} />Programar contenido</button>
+        </div>
+      </article>
+    </div>
   );
 }
 
