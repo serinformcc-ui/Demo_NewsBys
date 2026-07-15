@@ -54,9 +54,44 @@ CRON_SECRET=choose-a-long-random-value
 META_GRAPH_VERSION=v23.0
 ```
 
-## 5. Cron
+## 5. Scheduler / Cron
 
-`vercel.json` runs `/api/cron/publish-due` every 5 minutes.
+Vercel Hobby only allows Cron Jobs once per day, so this repo does **not** register a Vercel Cron Job by default.
+
+The publishing endpoint still exists:
+
+```text
+/api/cron/publish-due
+```
+
+Use one of these options:
+
+1. External scheduler such as cron-job.org, EasyCron, Better Stack, GitHub Actions schedule, or any server you control.
+2. Supabase Edge Function scheduled by Supabase.
+3. Upgrade Vercel to Pro and add this back to `vercel.json`:
+
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cron/publish-due",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}
+```
+
+For Hobby, configure the external scheduler to call every 5 minutes:
+
+```text
+https://YOUR-VERCEL-DOMAIN.vercel.app/api/cron/publish-due?secret=YOUR_CRON_SECRET
+```
+
+or send:
+
+```text
+Authorization: Bearer YOUR_CRON_SECRET
+```
 
 The cron publishes due rows from `scheduled_posts` where:
 
@@ -73,4 +108,4 @@ With env vars configured:
 2. Create a scheduled post via `/api/schedule-post`.
 3. Call `/api/cron/publish-due?secret=YOUR_CRON_SECRET`.
 
-In production, Vercel calls the cron automatically.
+In production on Vercel Hobby, your external scheduler calls the cron endpoint.
