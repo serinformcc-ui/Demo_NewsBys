@@ -74,6 +74,8 @@ type Client = {
   language: string;
   tags: string[];
   accounts: SocialAccount[];
+  ownerEmail?: string;
+  assignedUserEmails?: string[];
 };
 
 type ScheduledPost = {
@@ -114,6 +116,14 @@ type ScheduleDraft = {
   goal: Goal;
 };
 
+type ClientDraft = {
+  name: string;
+  sector: string;
+  language: string;
+  tags: string;
+  accounts: Array<{ id: string; network: Network; handle: string }>;
+};
+
 type DemoDatabase = {
   version: number;
   users: StoredUser[];
@@ -124,7 +134,7 @@ type DemoDatabase = {
 };
 
 const DB_KEY = "newsbys-demo-db";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 const seedUsers: StoredUser[] = [
   { email: "admin.pr@newsbys.demo", password: "AdminPR2026!", name: "Admin PR", role: "admin", createdAt: "2026-07-09T09:00:00.000Z", source: "seed" },
@@ -152,6 +162,8 @@ const initialClients: Client[] = [
     sector: "Consultoria tecnologica",
     language: "Espanol",
     tags: ["transformacion digital", "erp", "ciberseguridad"],
+    ownerEmail: "admin.pr@newsbys.demo",
+    assignedUserEmails: ["admin.pr@newsbys.demo", "cm@newsbys.demo"],
     accounts: [
       metricAccount("serinfor-li", "LinkedIn", "Serinfor", 18400, 4.9, 83500, 16),
       metricAccount("serinfor-ig", "Instagram", "@serinfor", 9600, 5.7, 61200, 14),
@@ -164,6 +176,8 @@ const initialClients: Client[] = [
     sector: "Marketing y comunicacion",
     language: "Espanol",
     tags: ["email marketing", "automatizacion", "crm"],
+    ownerEmail: "admin.pr@newsbys.demo",
+    assignedUserEmails: ["admin.pr@newsbys.demo"],
     accounts: [
       metricAccount("sm-ig", "Instagram", "@serinformarketing", 22100, 6.4, 140000, 22),
       metricAccount("sm-tiktok", "TikTok", "@serinformkt", 31600, 7.8, 246000, 28),
@@ -176,6 +190,8 @@ const initialClients: Client[] = [
     sector: "Retail telefonia",
     language: "Espanol",
     tags: ["telefonia", "retail", "ofertas"],
+    ownerEmail: "admin@newsbys.demo",
+    assignedUserEmails: ["admin@newsbys.demo"],
     accounts: [
       metricAccount("pe-facebook", "Facebook", "Phone Expansion", 27400, 4.3, 122000, 20),
       metricAccount("pe-ig", "Instagram", "@phoneexpansion", 19800, 6.1, 118500, 18),
@@ -188,6 +204,8 @@ const initialClients: Client[] = [
     sector: "SaaS B2B",
     language: "Espanol",
     tags: ["software", "productividad", "email marketing"],
+    ownerEmail: "admin.pr@newsbys.demo",
+    assignedUserEmails: ["admin.pr@newsbys.demo", "cm@newsbys.demo"],
     accounts: [
       metricAccount("bys-li", "LinkedIn", "Bys", 14200, 5.2, 77200, 15),
       metricAccount("bys-x", "X", "@bysapp", 7800, 3.2, 31400, 19),
@@ -214,13 +232,67 @@ const initialArticles: Article[] = [
 ];
 
 const suggestedTopics = ["IA generativa", "UGC", "social commerce", "marca empleadora", "video corto", "automatizacion", "atencion al cliente", "tendencias sectoriales"];
-const days = Array.from({ length: 35 }, (_, index) => index + 1);
 const browserLanguage = new Intl.DisplayNames(["es"], { type: "language" }).of(navigator.language.split("-")[0]) ?? "Espanol";
-const defaultScheduleDate = "2026-07-18";
+const defaultScheduleDate = "2026-07-15";
+const monthFormatter = new Intl.DateTimeFormat("es-ES", { month: "long", year: "numeric" });
+const emptyClient: Client = {
+  id: "empty-client",
+  name: "Sin clientes asignados",
+  sector: "Crea o solicita un cliente",
+  language: "Espanol",
+  tags: [],
+  accounts: [],
+  ownerEmail: "",
+  assignedUserEmails: [],
+};
 
 function dayFromDate(date: string) {
   const day = Number(date.split("-")[2]);
   return Math.min(31, Math.max(1, Number.isFinite(day) ? day : 1));
+}
+
+function formatDateInput(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function monthKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthFromDateInput(date: string) {
+  const [year, month] = date.split("-").map(Number);
+  return new Date(year || 2026, (month || 7) - 1, 1);
+}
+
+function dateForMonthDay(month: Date, day: number) {
+  const maxDay = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  return formatDateInput(new Date(month.getFullYear(), month.getMonth(), Math.min(Math.max(day, 1), maxDay)));
+}
+
+function buildCalendarCells(month: Date) {
+  const first = new Date(month.getFullYear(), month.getMonth(), 1);
+  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const startOffset = (first.getDay() + 6) % 7;
+  const cells: Array<{ day: number; date: string } | null> = Array.from({ length: startOffset }, () => null);
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    cells.push({ day, date: dateForMonthDay(month, day) });
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
+function createDefaultClientDraft(): ClientDraft {
+  return {
+    name: "",
+    sector: "",
+    language: "Espanol",
+    tags: "marca, contenido",
+    accounts: [
+      { id: `draft-${Date.now()}-1`, network: "Instagram", handle: "" },
+      { id: `draft-${Date.now()}-2`, network: "Instagram", handle: "" },
+      { id: `draft-${Date.now()}-3`, network: "LinkedIn", handle: "" },
+    ],
+  };
 }
 
 function normalizeNetwork(network: string): Network {
@@ -231,6 +303,12 @@ function normalizeNetwork(network: string): Network {
 function normalizeClients(clients: Client[]) {
   return clients.map((client) => ({
     ...client,
+    ownerEmail: client.ownerEmail ?? initialClients.find((initialClient) => initialClient.id === client.id)?.ownerEmail ?? "admin.pr@newsbys.demo",
+    assignedUserEmails: Array.from(new Set([
+      ...(client.assignedUserEmails ?? []),
+      ...(initialClients.find((initialClient) => initialClient.id === client.id)?.assignedUserEmails ?? []),
+      client.ownerEmail ?? initialClients.find((initialClient) => initialClient.id === client.id)?.ownerEmail ?? "admin.pr@newsbys.demo",
+    ])),
     accounts: [
       ...client.accounts.map((account) => ({
         ...account,
@@ -403,6 +481,7 @@ function App() {
   const articles = database.articles;
   const [selectedClientId, setSelectedClientId] = useState(clients[0]?.id ?? "serinfor");
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>(clients[0]?.accounts.map((account) => account.id) ?? []);
+  const [currentMonth, setCurrentMonth] = useState(() => monthFromDateInput(defaultScheduleDate));
   const [activePanel, setActivePanel] = useState<"dashboard" | "descubrimiento" | "admin">("dashboard");
   const [translateArticles, setTranslateArticles] = useState(true);
   const [selectedTag, setSelectedTag] = useState("Todos");
@@ -420,6 +499,8 @@ function App() {
     format: "Carrusel" as Format,
     goal: "Engagement" as Goal,
   });
+  const [isClientModalOpen, setClientModalOpen] = useState(false);
+  const [clientDraft, setClientDraft] = useState<ClientDraft>(() => createDefaultClientDraft());
   const [loginError, setLoginError] = useState("");
   const [loginNotice, setLoginNotice] = useState("");
   const [composer, setComposer] = useState({ accountId: clients[0]?.accounts[0]?.id ?? "", title: "", day: "18", time: "10:00", format: "Carrusel" as Format, goal: "Engagement" as Goal });
@@ -454,15 +535,19 @@ function App() {
     }} />;
   }
 
-  const selectedClient = clients.find((client) => client.id === selectedClientId) ?? clients[0];
-  const scheduleClient = clients.find((client) => client.id === scheduleDraft.clientId) ?? selectedClient;
-  const scheduleAccounts = scheduleClient?.accounts ?? [];
   const isAdmin = session.role === "admin";
   const isAdminPr = session.name === "Admin PR";
+  const visibleClients = isAdmin ? clients : clients.filter((client) => client.ownerEmail === session.email || client.assignedUserEmails?.includes(session.email));
+  const selectedClient = visibleClients.find((client) => client.id === selectedClientId) ?? visibleClients[0] ?? emptyClient;
+  const scheduleClient = visibleClients.find((client) => client.id === scheduleDraft.clientId) ?? selectedClient;
+  const scheduleAccounts = scheduleClient?.accounts ?? [];
   const selectedAccounts = selectedClient.accounts.filter((account) => selectedAccountIds.includes(account.id));
   const visibleAccounts = selectedAccounts.length ? selectedAccounts : selectedClient.accounts;
   const clientPosts = posts.filter((item) => item.clientId === selectedClient.id);
   const accountPosts = clientPosts.filter((item) => visibleAccounts.some((account) => account.id === item.accountId));
+  const currentMonthKey = monthKey(currentMonth);
+  const calendarCells = useMemo(() => buildCalendarCells(currentMonth), [currentMonth]);
+  const monthPosts = accountPosts.filter((item) => (item.date ?? dateForMonthDay(currentMonth, item.day)).startsWith(currentMonthKey));
   const totalReach = visibleAccounts.reduce((sum, account) => sum + account.reach, 0);
   const totalClicks = visibleAccounts.reduce((sum, account) => sum + account.clicks, 0);
   const totalSaves = visibleAccounts.reduce((sum, account) => sum + account.saves, 0);
@@ -489,7 +574,7 @@ function App() {
   }, [clientPosts]);
 
   function selectClient(clientId: string) {
-    const nextClient = clients.find((client) => client.id === clientId) ?? clients[0];
+    const nextClient = visibleClients.find((client) => client.id === clientId) ?? visibleClients[0] ?? emptyClient;
     setSelectedClientId(nextClient.id);
     setSelectedAccountIds(nextClient.accounts.map((account) => account.id));
     setSelectedTag("Todos");
@@ -524,7 +609,11 @@ function App() {
   }
 
   function openScheduleModal() {
-    const client = selectedClient ?? clients[0];
+    if (!visibleClients.length) {
+      setClientModalOpen(true);
+      return;
+    }
+    const client = selectedClient ?? visibleClients[0];
     setScheduleDraft((current) => ({
       ...current,
       clientId: client.id,
@@ -536,7 +625,7 @@ function App() {
   }
 
   function changeScheduleClient(clientId: string) {
-    const client = clients.find((item) => item.id === clientId) ?? clients[0];
+    const client = visibleClients.find((item) => item.id === clientId) ?? visibleClients[0] ?? emptyClient;
     setScheduleDraft((current) => ({
       ...current,
       clientId: client.id,
@@ -545,7 +634,7 @@ function App() {
   }
 
   function saveScheduledModal(status: PostStatus) {
-    const client = clients.find((item) => item.id === scheduleDraft.clientId);
+    const client = visibleClients.find((item) => item.id === scheduleDraft.clientId);
     const account = client?.accounts.find((item) => item.id === scheduleDraft.accountId);
     if (!client || !account || !scheduleDraft.title.trim()) return;
     const nextPost: ScheduledPost = {
@@ -565,6 +654,7 @@ function App() {
     setSelectedClientId(client.id);
     setSelectedAccountIds([account.id]);
     setComposer((current) => ({ ...current, accountId: account.id, day: String(nextPost.day), time: scheduleDraft.time, title: "" }));
+    setCurrentMonth(monthFromDateInput(scheduleDraft.date));
     setScheduleDraft((current) => ({ ...current, title: "" }));
     setScheduleFiles([]);
     setActivePanel("dashboard");
@@ -578,7 +668,7 @@ function App() {
       id: `post-${Date.now()}`,
       clientId: selectedClient.id,
       accountId: account.id,
-      date: `2026-07-${String(Number(composer.day)).padStart(2, "0")}`,
+      date: dateForMonthDay(currentMonth, Number(composer.day)),
       day: Number(composer.day),
       time: composer.time,
       title: composer.title.trim(),
@@ -590,6 +680,78 @@ function App() {
     setDatabase((current) => ({ ...current, posts: [...current.posts, nextPost] }));
     setComposer((current) => ({ ...current, title: "" }));
     setAttachedFiles([]);
+  }
+
+  function openClientModal() {
+    setClientDraft(createDefaultClientDraft());
+    setClientModalOpen(true);
+  }
+
+  function updateClientDraftAccount(accountId: string, patch: Partial<{ network: Network; handle: string }>) {
+    setClientDraft((current) => ({
+      ...current,
+      accounts: current.accounts.map((account) => account.id === accountId ? { ...account, ...patch } : account),
+    }));
+  }
+
+  function addClientDraftAccount() {
+    setClientDraft((current) => ({
+      ...current,
+      accounts: [...current.accounts, { id: `draft-${Date.now()}`, network: "Instagram", handle: "" }],
+    }));
+  }
+
+  function removeClientDraftAccount(accountId: string) {
+    setClientDraft((current) => ({
+      ...current,
+      accounts: current.accounts.length === 1 ? current.accounts : current.accounts.filter((account) => account.id !== accountId),
+    }));
+  }
+
+  function loadPadillaExample() {
+    setClientDraft({
+      name: "Padilla",
+      sector: "Marca local",
+      language: "Espanol",
+      tags: "marca, comercio local, comunidad",
+      accounts: [
+        { id: `padilla-${Date.now()}-ig-1`, network: "Instagram", handle: "@padilla" },
+        { id: `padilla-${Date.now()}-ig-2`, network: "Instagram", handle: "@padilla.store" },
+        { id: `padilla-${Date.now()}-li`, network: "LinkedIn", handle: "Padilla" },
+      ],
+    });
+  }
+
+  function createClientFromModal() {
+    if (!clientDraft.name.trim()) return;
+    const slug = clientDraft.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || `cliente-${Date.now()}`;
+    const accounts = clientDraft.accounts
+      .filter((account) => account.handle.trim())
+      .map((account, index) => metricAccount(
+        `${slug}-${account.network.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}-${index}`,
+        account.network,
+        account.handle.trim(),
+        2800 + index * 1900,
+        4.2 + index * 0.7,
+        16000 + index * 8400,
+        6 + index * 3,
+      ));
+    const client: Client = {
+      id: `${slug}-${Date.now()}`,
+      name: clientDraft.name.trim(),
+      sector: clientDraft.sector.trim() || "Nuevo cliente",
+      language: clientDraft.language.trim() || "Espanol",
+      tags: clientDraft.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+      accounts,
+      ownerEmail: session.email,
+      assignedUserEmails: [session.email],
+    };
+    setDatabase((current) => ({ ...current, clients: [...current.clients, client] }));
+    setSelectedClientId(client.id);
+    setSelectedAccountIds(accounts.map((account) => account.id));
+    setComposer((current) => ({ ...current, accountId: accounts[0]?.id ?? "" }));
+    setAdminAccount((current) => ({ ...current, clientId: client.id }));
+    setClientModalOpen(false);
   }
 
   function addAccount() {
@@ -608,7 +770,7 @@ function App() {
     setAdminAccount((current) => ({ ...current, handle: "" }));
   }
 
-function addClient() {
+  function addClient() {
     if (!isAdmin || !newClient.name.trim()) return;
     const id = newClient.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || `cliente-${Date.now()}`;
     const client: Client = {
@@ -618,6 +780,8 @@ function addClient() {
       language: newClient.language.trim() || "Espanol",
       tags: ["marca", "contenido"],
       accounts: [],
+      ownerEmail: session.email,
+      assignedUserEmails: [session.email],
     };
     setDatabase((current) => ({ ...current, clients: [...current.clients, client] }));
     setNewClient({ name: "", sector: "", language: "Espanol" });
@@ -652,13 +816,13 @@ function addClient() {
           <button type="button" onClick={() => setSession(null)} aria-label="Cerrar sesion"><LogOut size={15} /></button>
         </div>
 
-          <button className="new-client-button" type="button" disabled={!isAdmin} onClick={() => setActivePanel("admin")}>
+          <button className="new-client-button" type="button" onClick={openClientModal}>
           <Plus size={16} />
           Cliente
         </button>
 
         <nav className="client-list">
-          {clients.map((client) => (
+          {visibleClients.length ? visibleClients.map((client) => (
             <button key={client.id} className={`client-item ${client.id === selectedClient.id ? "active" : ""}`} onClick={() => selectClient(client.id)} type="button">
               <span className="client-avatar">{client.name.slice(0, 2)}</span>
               <span>
@@ -666,7 +830,7 @@ function addClient() {
                 <small>{client.accounts.length} cuentas</small>
               </span>
             </button>
-          ))}
+          )) : <div className="empty-client-list"><Users size={18} /><span>No tienes clientes asignados.</span></div>}
         </nav>
 
         <section className="game-card" aria-label="Progreso semanal">
@@ -697,12 +861,12 @@ function addClient() {
         <section className="account-strip" aria-label="Cuentas conectadas">
           <div className="section-title"><Link2 size={17} /><span>{selectedClient.accounts.length} cuentas conectadas</span></div>
           <div className="account-list">
-            {selectedClient.accounts.map((account) => (
+            {selectedClient.accounts.length ? selectedClient.accounts.map((account) => (
               <button type="button" key={account.id} className={`account-chip ${selectedAccountIds.includes(account.id) ? "selected" : ""}`} onClick={() => toggleAccount(account.id)}>
                 <NetworkBadge network={account.network} />
                 <span>{account.handle}</span>
               </button>
-            ))}
+            )) : <span className="empty-accounts">Crea un cliente o vincula sus cuentas para empezar.</span>}
           </div>
         </section>
 
@@ -722,18 +886,24 @@ function addClient() {
 
         <section className="planning-layout">
           <div className="calendar-panel">
-            <div className="panel-heading">
-              <div><p className="eyebrow">Julio 2026 - {accountPosts.length} registros desde BBDD</p><h2>Calendario editorial</h2></div>
-              <button className="ghost-button" type="button"><CalendarDays size={17} />Mes<ChevronDown size={15} /></button>
+            <div className="panel-heading calendar-heading">
+              <div><p className="eyebrow">{monthPosts.length} registros desde BBDD</p><h2>{monthFormatter.format(currentMonth)}</h2></div>
+              <div className="calendar-controls">
+                <button className="ghost-button" type="button" onClick={() => setCurrentMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))}>Anterior</button>
+                <button className="ghost-button" type="button" onClick={() => setCurrentMonth(monthFromDateInput(defaultScheduleDate))}><CalendarDays size={17} />Hoy</button>
+                <button className="ghost-button" type="button" onClick={() => setCurrentMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))}>Siguiente<ChevronDown size={15} /></button>
+              </div>
             </div>
 
             <div className="calendar-grid">
               {["L", "M", "X", "J", "V", "S", "D"].map((day) => <div className="weekday" key={day}>{day}</div>)}
-              {days.map((day) => {
-                const dayPosts = accountPosts.filter((item) => item.day === day);
+              {calendarCells.map((cell, index) => {
+                if (!cell) return <div className="day-cell empty-day" key={`empty-${index}`} />;
+                const dayPosts = monthPosts.filter((item) => item.date === cell.date);
+                const isToday = cell.date === defaultScheduleDate;
                 return (
-                  <div className={`day-cell ${day === 9 ? "today" : ""} ${dayPosts.length ? "has-posts" : ""}`} key={day}>
-                    <span>{day}</span>
+                  <div className={`day-cell ${isToday ? "today" : ""} ${dayPosts.length ? "has-posts" : ""}`} key={cell.date}>
+                    <span>{cell.day}</span>
                     {dayPosts.slice(0, 2).map((item) => {
                       const account = selectedClient.accounts.find((candidate) => candidate.id === item.accountId);
                       return <article className={`post-pill ${item.status.toLowerCase()}`} key={item.id}><small>{item.time}</small><strong>{item.title}</strong><em>{account?.network} - {item.format}</em></article>;
@@ -745,17 +915,17 @@ function addClient() {
             </div>
 
             <div className="agenda-list">
-              {accountPosts.length ? accountPosts.map((item) => {
+              {monthPosts.length ? monthPosts.map((item) => {
                 const account = selectedClient.accounts.find((candidate) => candidate.id === item.accountId);
-                return <article key={item.id} className="agenda-item"><div><strong>{item.day}</strong><small>Jul</small></div><span><b>{item.title}</b><em>{item.time} - {account?.network} - {item.goal}</em></span></article>;
+                return <article key={item.id} className="agenda-item"><div><strong>{item.day}</strong><small>{monthFormatter.format(currentMonth).slice(0, 3)}</small></div><span><b>{item.title}</b><em>{item.time} - {account?.network} - {item.goal}</em></span></article>;
               }) : <article className="empty-agenda"><CalendarDays size={20} /><span>No hay publicaciones guardadas para estas cuentas.</span></article>}
             </div>
           </div>
 
           <aside className="composer-panel">
             <div className="panel-heading compact"><div><p className="eyebrow">Nueva publicacion</p><h2>Programar contenido</h2></div><Sparkles size={19} /></div>
-            <label>Cuenta<select value={composer.accountId} onChange={(event) => setComposer({ ...composer, accountId: event.target.value })}>{selectedClient.accounts.map((account) => <option key={account.id} value={account.id}>{account.network} - {account.handle}</option>)}</select></label>
-            <label>Dia<input type="number" min="1" max="31" value={composer.day} onChange={(event) => setComposer({ ...composer, day: event.target.value })} /></label>
+            <label>Cuenta<select value={composer.accountId} onChange={(event) => setComposer({ ...composer, accountId: event.target.value })}>{selectedClient.accounts.length ? selectedClient.accounts.map((account) => <option key={account.id} value={account.id}>{account.network} - {account.handle}</option>) : <option>Sin cuentas vinculadas</option>}</select></label>
+            <label>Dia<input type="number" min="1" max={new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate()} value={composer.day} onChange={(event) => setComposer({ ...composer, day: event.target.value })} /></label>
             <label>Hora<input type="time" value={composer.time} onChange={(event) => setComposer({ ...composer, time: event.target.value })} /></label>
             <label>Formato<select value={composer.format} onChange={(event) => setComposer({ ...composer, format: event.target.value as Format })}><option>Carrusel</option><option>Video</option><option>Post</option><option>Articulo</option></select></label>
             <label>Objetivo<select value={composer.goal} onChange={(event) => setComposer({ ...composer, goal: event.target.value as Goal })}><option>Alcance</option><option>Engagement</option><option>Leads</option><option>Comunidad</option></select></label>
@@ -784,7 +954,7 @@ function addClient() {
       {selectedArticle ? <ArticleModal article={selectedArticle} translateArticles={translateArticles} onClose={() => setSelectedArticle(null)} /> : null}
       {isScheduleModalOpen ? (
         <ScheduleModal
-          clients={clients}
+          clients={visibleClients}
           scheduleDraft={scheduleDraft}
           scheduleClient={scheduleClient}
           scheduleAccounts={scheduleAccounts}
@@ -796,7 +966,86 @@ function addClient() {
           onSave={saveScheduledModal}
         />
       ) : null}
+      {isClientModalOpen ? (
+        <ClientModal
+          clientDraft={clientDraft}
+          networks={networks}
+          setClientDraft={setClientDraft}
+          updateAccount={updateClientDraftAccount}
+          addAccount={addClientDraftAccount}
+          removeAccount={removeClientDraftAccount}
+          loadPadillaExample={loadPadillaExample}
+          onClose={() => setClientModalOpen(false)}
+          onCreate={createClientFromModal}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function ClientModal({ clientDraft, networks, setClientDraft, updateAccount, addAccount, removeAccount, loadPadillaExample, onClose, onCreate }: {
+  clientDraft: ClientDraft;
+  networks: Network[];
+  setClientDraft: React.Dispatch<React.SetStateAction<ClientDraft>>;
+  updateAccount: (accountId: string, patch: Partial<{ network: Network; handle: string }>) => void;
+  addAccount: () => void;
+  removeAccount: (accountId: string) => void;
+  loadPadillaExample: () => void;
+  onClose: () => void;
+  onCreate: () => void;
+}) {
+  const hasValidAccount = clientDraft.accounts.some((account) => account.handle.trim());
+  const canCreate = Boolean(clientDraft.name.trim() && hasValidAccount);
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Crear cliente">
+      <article className="client-modal">
+        <button className="icon-button close-button" aria-label="Cerrar creacion de cliente" type="button" onClick={onClose}><CloseIcon size={18} /></button>
+        <div className="panel-heading compact">
+          <div>
+            <p className="eyebrow">Alta de cliente</p>
+            <h2>Crear cliente y vincular cuentas</h2>
+          </div>
+          <button className="ghost-button" type="button" onClick={loadPadillaExample}><Sparkles size={16} />Ejemplo Padilla</button>
+        </div>
+
+        <div className="schedule-grid">
+          <label>Cliente
+            <input value={clientDraft.name} onChange={(event) => setClientDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Ej. Padilla" />
+          </label>
+          <label>Sector
+            <input value={clientDraft.sector} onChange={(event) => setClientDraft((current) => ({ ...current, sector: event.target.value }))} placeholder="Ej. Marca local" />
+          </label>
+          <label>Idioma
+            <input value={clientDraft.language} onChange={(event) => setClientDraft((current) => ({ ...current, language: event.target.value }))} />
+          </label>
+          <label>Tags
+            <input value={clientDraft.tags} onChange={(event) => setClientDraft((current) => ({ ...current, tags: event.target.value }))} placeholder="marca, contenido, comunidad" />
+          </label>
+        </div>
+
+        <div className="account-builder">
+          <div className="panel-heading compact">
+            <div><p className="eyebrow">Cuentas iniciales</p><h2>Marca una o varias cuentas</h2></div>
+            <button className="ghost-button" type="button" onClick={addAccount}><Plus size={16} />Cuenta</button>
+          </div>
+          {clientDraft.accounts.map((account) => (
+            <div className="account-builder-row" key={account.id}>
+              <select value={account.network} onChange={(event) => updateAccount(account.id, { network: event.target.value as Network })}>
+                {networks.map((network) => <option key={network}>{network}</option>)}
+              </select>
+              <input value={account.handle} onChange={(event) => updateAccount(account.id, { handle: event.target.value })} placeholder="@cuenta o nombre de pagina" />
+              <button className="icon-button" type="button" aria-label="Quitar cuenta" onClick={() => removeAccount(account.id)}><CloseIcon size={16} /></button>
+            </div>
+          ))}
+        </div>
+
+        <div className="schedule-actions">
+          <button className="ghost-button" type="button" onClick={onClose}>Cancelar</button>
+          <button className="primary-button" type="button" onClick={onCreate} disabled={!canCreate}><Plus size={16} />Crear cliente</button>
+        </div>
+      </article>
+    </div>
   );
 }
 

@@ -310,6 +310,18 @@ h3 {
   gap: 8px;
 }
 
+.empty-client-list {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding: 12px;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.76);
+  background: rgba(255, 255, 255, 0.08);
+  font-weight: 800;
+  font-size: 0.86rem;
+}
+
 .client-item {
   width: 100%;
   min-height: 62px;
@@ -696,6 +708,18 @@ h3 {
   box-shadow: 0 8px 18px rgba(252, 206, 13, 0.18);
 }
 
+.empty-accounts {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: var(--mail-muted);
+  background: var(--mail-soft);
+  border: 1px dashed #bac4ce;
+  font-weight: 800;
+}
+
 .network-badge {
   width: 28px;
   height: 28px;
@@ -833,6 +857,21 @@ h3 {
   align-items: flex-start;
 }
 
+.calendar-heading {
+  align-items: center;
+}
+
+.calendar-heading h2 {
+  text-transform: capitalize;
+}
+
+.calendar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(78px, 1fr));
@@ -866,6 +905,18 @@ h3 {
 .day-cell.today {
   border-color: var(--mail-yellow);
   background: #fff8d6;
+}
+
+.day-cell.empty-day {
+  min-height: 78px;
+  background: transparent;
+  border: 1px dashed rgba(202, 210, 220, 0.62);
+  box-shadow: none;
+}
+
+.day-cell.empty-day:hover {
+  transform: none;
+  box-shadow: none;
 }
 
 .day-cell.has-posts {
@@ -1379,10 +1430,41 @@ textarea {
   animation: modalIn 220ms ease both;
 }
 
+.client-modal {
+  width: min(860px, 100%);
+  max-height: min(840px, 92vh);
+  overflow: auto;
+  position: relative;
+  display: grid;
+  gap: 16px;
+  border-radius: 8px;
+  padding: 24px;
+  background: #ffffff;
+  border-top: 4px solid var(--mail-yellow);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.24);
+  animation: modalIn 220ms ease both;
+}
+
 .schedule-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.account-builder {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--mail-soft);
+  border: 1px solid var(--mail-line);
+}
+
+.account-builder-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(180px, 1fr) auto;
+  gap: 8px;
+  align-items: center;
 }
 
 .schedule-upload {
@@ -1690,7 +1772,15 @@ textarea {
     padding: 22px 18px;
   }
 
+  .client-modal {
+    padding: 22px 18px;
+  }
+
   .schedule-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-builder-row {
     grid-template-columns: 1fr;
   }
 
