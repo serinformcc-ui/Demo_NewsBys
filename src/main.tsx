@@ -469,6 +469,44 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat("es-ES", { notation: value > 9999 ? "compact" : "standard" }).format(value);
 }
 
+const realBackendEnabled = import.meta.env.VITE_REAL_BACKEND_ENABLED === "true";
+
+function fileToBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function postJson<T>(url: string, payload: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Error de API");
+  return data as T;
+}
+
+function mapSupabaseAccount(account: Record<string, unknown>): SocialAccount {
+  return {
+    id: String(account.id),
+    network: account.network as Network,
+    handle: String(account.handle),
+    audience: Number(account.audience ?? 0),
+    engagement: Number(account.engagement ?? 0),
+    reach: Number(account.reach ?? 0),
+    posts: Number(account.posts_count ?? 0),
+    clicks: Number(account.clicks ?? 0),
+    saves: Number(account.saves ?? 0),
+    responseRate: Number(account.response_rate ?? 0),
+    growth: Number(account.growth ?? 0),
+  };
+}
+
 function useStoredState<T>(key: string, fallback: T, normalize?: (value: T) => T) {
   const [value, setValue] = useState<T>(() => {
     try {
@@ -509,6 +547,7 @@ function App() {
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
   const [isScheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [scheduleFiles, setScheduleFiles] = useState<string[]>([]);
+  const [scheduleUploadFiles, setScheduleUploadFiles] = useState<File[]>([]);
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>({
     clientId: clients[0]?.id ?? "",
     accountId: clients[0]?.accounts[0]?.id ?? "",
@@ -624,7 +663,9 @@ function App() {
   }
 
   function handleScheduleFiles(event: ChangeEvent<HTMLInputElement>) {
-    setScheduleFiles(Array.from(event.target.files ?? []).map((file) => file.name));
+    const files = Array.from(event.target.files ?? []);
+    setScheduleUploadFiles(files);
+    setScheduleFiles(files.map((file) => file.name));
   }
 
   function openScheduleModal() {
@@ -640,6 +681,7 @@ function App() {
       date: current.date || defaultScheduleDate,
     }));
     setScheduleFiles([]);
+    setScheduleUploadFiles([]);
     setScheduleModalOpen(true);
   }
 
@@ -652,12 +694,53 @@ function App() {
     }));
   }
 
-  function saveScheduledModal(status: PostStatus) {
+  async function uploadScheduleImage(clientId: string) {
+    const file = scheduleUploadFiles[0];
+    if (!file) return null;
+    const base64 = await fileToBase64(file);
+    const result = await postJson<{ media: { id: string; url: string }; url: string }>("/api/upload-image", {
+      clientId,
+      fileName: file.name,
+      contentType: file.type,
+      base64,
+    });
+    return result.media;
+  }
+
+  async function saveScheduledModal(status: PostStatus) {
     const client = visibleClients.find((item) => item.id === scheduleDraft.clientId);
     const account = client?.accounts.find((item) => item.id === scheduleDraft.accountId);
     if (!client || !account || !scheduleDraft.title.trim()) return;
+    let mediaUrl = scheduleFiles[0] ?? "";
+    let realPostId = "";
+
+    if (realBackendEnabled) {
+      try {
+        if (account.network === "Instagram" && !scheduleUploadFiles[0]) {
+          throw new Error("Instagram necesita una imagen publica para poder publicar de verdad.");
+        }
+        const uploadedMedia = await uploadScheduleImage(client.id);
+        mediaUrl = uploadedMedia?.url ?? mediaUrl;
+        const scheduledAt = new Date(`${scheduleDraft.date}T${scheduleDraft.time}:00`).toISOString();
+        const result = await postJson<{ post: { id: string } }>("/api/schedule-post", {
+          clientId: client.id,
+          socialAccountId: account.id,
+          scheduledAt,
+          caption: scheduleDraft.title.trim(),
+          format: scheduleDraft.format,
+          goal: scheduleDraft.goal,
+          mediaAssetId: uploadedMedia?.id ?? null,
+          mediaUrl: uploadedMedia?.url ?? null,
+        });
+        realPostId = result.post.id;
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "No se pudo programar en la BBDD real.");
+        return;
+      }
+    }
+
     const nextPost: ScheduledPost = {
-      id: `post-${Date.now()}`,
+      id: realPostId || `post-${Date.now()}`,
       clientId: client.id,
       accountId: account.id,
       date: scheduleDraft.date,
@@ -667,7 +750,7 @@ function App() {
       status,
       format: scheduleDraft.format,
       goal: scheduleDraft.goal,
-      files: scheduleFiles,
+      files: mediaUrl ? [mediaUrl] : scheduleFiles,
     };
     setDatabase((current) => ({ ...current, posts: [...current.posts, nextPost] }));
     setSelectedClientId(client.id);
@@ -676,6 +759,7 @@ function App() {
     setCurrentMonth(monthFromDateInput(scheduleDraft.date));
     setScheduleDraft((current) => ({ ...current, title: "" }));
     setScheduleFiles([]);
+    setScheduleUploadFiles([]);
     setActivePanel("dashboard");
     setScheduleModalOpen(false);
   }
@@ -741,22 +825,45 @@ function App() {
     });
   }
 
-  function createClientFromModal() {
+  async function createClientFromModal() {
     if (!clientDraft.name.trim()) return;
     const slug = clientDraft.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || `cliente-${Date.now()}`;
-    const accounts = clientDraft.accounts
+    const draftAccounts = clientDraft.accounts
       .filter((account) => account.handle.trim())
-      .map((account, index) => metricAccount(
+      .map((account) => ({ network: account.network, handle: account.handle.trim() }));
+    let clientId = `${slug}-${Date.now()}`;
+    let accounts = draftAccounts.map((account, index) => metricAccount(
         `${slug}-${account.network.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}-${index}`,
         account.network,
-        account.handle.trim(),
+        account.handle,
         2800 + index * 1900,
         4.2 + index * 0.7,
         16000 + index * 8400,
         6 + index * 3,
       ));
+
+    if (realBackendEnabled) {
+      try {
+        const result = await postJson<{ client: { id: string }; accounts: Array<Record<string, unknown>> }>("/api/create-client", {
+          ownerEmail: session.email,
+          ownerName: session.name,
+          ownerRole: session.role,
+          name: clientDraft.name.trim(),
+          sector: clientDraft.sector.trim() || "Nuevo cliente",
+          language: clientDraft.language.trim() || "Espanol",
+          tags: clientDraft.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+          accounts: draftAccounts,
+        });
+        clientId = result.client.id;
+        accounts = result.accounts.map(mapSupabaseAccount);
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "No se pudo crear el cliente en Supabase.");
+        return;
+      }
+    }
+
     const client: Client = {
-      id: `${slug}-${Date.now()}`,
+      id: clientId,
       name: clientDraft.name.trim(),
       sector: clientDraft.sector.trim() || "Nuevo cliente",
       language: clientDraft.language.trim() || "Espanol",
@@ -896,7 +1003,7 @@ function App() {
         </section>
 
         <section className="database-strip" aria-label="Estado de base de datos">
-          <strong>BBDD local activa</strong>
+          <strong>{realBackendEnabled ? "Backend real activo" : "BBDD local activa"}</strong>
           <span>{databaseStats.users} usuarios</span>
           <span>{databaseStats.clients} clientes</span>
           <span>{databaseStats.accounts} cuentas</span>
