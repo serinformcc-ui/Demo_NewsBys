@@ -19,7 +19,7 @@ export default async function handler(req, res) {
 
   try {
     const body = await readJson(req);
-    const { ownerEmail, ownerName, ownerRole, name, sector, language, tags, accounts } = body;
+    const { ownerEmail, ownerName, ownerRole, name, sector, language, tags, accounts, assignedUsers } = body;
 
     if (!ownerEmail || !name) {
       sendJson(res, 400, { error: "ownerEmail and name are required" });
@@ -28,17 +28,29 @@ export default async function handler(req, res) {
 
     const supabase = getSupabaseAdmin();
     const normalizedEmail = String(ownerEmail).trim().toLowerCase();
+    const profileCandidates = new Map();
+    profileCandidates.set(normalizedEmail, {
+      email: normalizedEmail,
+      full_name: ownerName || normalizedEmail,
+      role: ownerRole === "admin" ? "admin" : "cm",
+    });
 
-    const { data: profile, error: profileError } = await supabase
+    (Array.isArray(assignedUsers) ? assignedUsers : []).forEach((user) => {
+      const email = String(user?.email || "").trim().toLowerCase();
+      if (!email) return;
+      profileCandidates.set(email, {
+        email,
+        full_name: user.name || email,
+        role: user.role === "admin" ? "admin" : "cm",
+      });
+    });
+
+    const { data: profiles, error: profileError } = await supabase
       .from("profiles")
-      .upsert({
-        email: normalizedEmail,
-        full_name: ownerName || normalizedEmail,
-        role: ownerRole === "admin" ? "admin" : "cm",
-      }, { onConflict: "email" })
-      .select()
-      .single();
+      .upsert(Array.from(profileCandidates.values()), { onConflict: "email" })
+      .select();
     if (profileError) throw profileError;
+    const profile = profiles.find((item) => item.email === normalizedEmail) || profiles[0];
 
     const { data: client, error: clientError } = await supabase
       .from("clients")
@@ -55,7 +67,11 @@ export default async function handler(req, res) {
 
     const { error: memberError } = await supabase
       .from("client_members")
-      .insert({ client_id: client.id, profile_id: profile.id, role: profile.role });
+      .insert(profiles.map((memberProfile) => ({
+        client_id: client.id,
+        profile_id: memberProfile.id,
+        role: memberProfile.role,
+      })));
     if (memberError) throw memberError;
 
     const accountRows = (Array.isArray(accounts) ? accounts : [])

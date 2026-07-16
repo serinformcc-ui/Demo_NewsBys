@@ -1,4 +1,4 @@
-import React, { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import React, { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Award,
@@ -121,7 +121,15 @@ type ClientDraft = {
   sector: string;
   language: string;
   tags: string;
+  assignedUserEmails: string[];
   accounts: Array<{ id: string; network: Network; handle: string }>;
+};
+
+type NewClientDraft = {
+  name: string;
+  sector: string;
+  language: string;
+  assignedUserEmails: string[];
 };
 
 type DemoDatabase = {
@@ -296,12 +304,13 @@ function buildCalendarCells(month: Date) {
   return cells;
 }
 
-function createDefaultClientDraft(): ClientDraft {
+function createDefaultClientDraft(assignedUserEmails: string[] = []): ClientDraft {
   return {
     name: "",
     sector: "",
     language: "Espanol",
     tags: "marca, contenido",
+    assignedUserEmails,
     accounts: [
       { id: `draft-${Date.now()}-1`, network: "Instagram", handle: "" },
       { id: `draft-${Date.now()}-2`, network: "Instagram", handle: "" },
@@ -348,6 +357,33 @@ function normalizeUsers(users: StoredUser[]) {
     else merged.push(normalized);
   });
   return merged;
+}
+
+function uniqueEmails(emails: string[]) {
+  return Array.from(new Set(emails.map((email) => email.trim().toLowerCase()).filter(Boolean)));
+}
+
+function toggleEmail(emails: string[], email: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  return emails.includes(normalizedEmail)
+    ? emails.filter((item) => item !== normalizedEmail)
+    : [...emails, normalizedEmail];
+}
+
+function clientAssigneeEmails(client: Client) {
+  return uniqueEmails(client.assignedUserEmails?.length ? client.assignedUserEmails : client.ownerEmail ? [client.ownerEmail] : []);
+}
+
+function usersFromEmails(users: User[], emails: string[]) {
+  return emails.map((email) => users.find((user) => user.email === email) ?? { email, name: email.split("@")[0], role: "cm" as Role });
+}
+
+function formatClientAssignees(client: Client, users: User[]) {
+  const names = usersFromEmails(users, clientAssigneeEmails(client)).map((user) => user.name);
+  if (!names.length) return "Sin responsable";
+  if (names.length === 1) return `Asignado a ${names[0]}`;
+  if (names.length === 2) return `Asignado a ${names[0]} y ${names[1]}`;
+  return `Asignado a ${names[0]}, ${names[1]} +${names.length - 2}`;
 }
 
 function normalizePosts(posts: ScheduledPost[], clients: Client[]) {
@@ -563,7 +599,12 @@ function App() {
   const [loginNotice, setLoginNotice] = useState("");
   const [composer, setComposer] = useState({ accountId: clients[0]?.accounts[0]?.id ?? "", title: "", day: "18", time: "10:00", format: "Carrusel" as Format, goal: "Engagement" as Goal });
   const [adminAccount, setAdminAccount] = useState({ clientId: "serinfor", network: "Instagram" as Network, handle: "" });
-  const [newClient, setNewClient] = useState({ name: "", sector: "", language: "Espanol" });
+  const [newClient, setNewClient] = useState<NewClientDraft>({ name: "", sector: "", language: "Espanol", assignedUserEmails: [] });
+
+  useEffect(() => {
+    if (!session) return;
+    setNewClient((current) => ({ ...current, assignedUserEmails: [session.email] }));
+  }, [session?.email]);
 
   if (!session) {
     return <LoginScreen users={database.users} error={loginError} notice={loginNotice} onLogin={(email, password) => {
@@ -595,6 +636,8 @@ function App() {
 
   const isAdmin = session.role === "admin";
   const isAdminPr = session.name === "Admin PR";
+  const assignableUsers = isAdmin ? database.users : database.users.filter((user) => user.email === session.email);
+  const defaultAssigneeEmails = uniqueEmails([session.email]);
   const visibleClients = isAdmin ? clients : clients.filter((client) => client.ownerEmail === session.email || client.assignedUserEmails?.includes(session.email));
   const selectedClient = visibleClients.find((client) => client.id === selectedClientId) ?? visibleClients[0] ?? emptyClient;
   const scheduleClient = visibleClients.find((client) => client.id === scheduleDraft.clientId) ?? selectedClient;
@@ -786,8 +829,44 @@ function App() {
   }
 
   function openClientModal() {
-    setClientDraft(createDefaultClientDraft());
+    setClientDraft(createDefaultClientDraft(defaultAssigneeEmails));
     setClientModalOpen(true);
+  }
+
+  function toggleClientDraftAssignee(email: string) {
+    setClientDraft((current) => ({
+      ...current,
+      assignedUserEmails: (() => {
+        const nextEmails = toggleEmail(current.assignedUserEmails.length ? current.assignedUserEmails : defaultAssigneeEmails, email);
+        return nextEmails.length ? nextEmails : current.assignedUserEmails;
+      })(),
+    }));
+  }
+
+  function toggleNewClientAssignee(email: string) {
+    setNewClient((current) => ({
+      ...current,
+      assignedUserEmails: (() => {
+        const nextEmails = toggleEmail(current.assignedUserEmails.length ? current.assignedUserEmails : defaultAssigneeEmails, email);
+        return nextEmails.length ? nextEmails : current.assignedUserEmails;
+      })(),
+    }));
+  }
+
+  function updateClientAssignees(clientId: string, email: string) {
+    setDatabase((current) => ({
+      ...current,
+      clients: current.clients.map((client) => {
+        if (client.id !== clientId) return client;
+        const nextEmails = toggleEmail(clientAssigneeEmails(client), email);
+        const assignedUserEmails = nextEmails.length ? nextEmails : clientAssigneeEmails(client);
+        return {
+          ...client,
+          ownerEmail: assignedUserEmails[0] ?? client.ownerEmail,
+          assignedUserEmails,
+        };
+      }),
+    }));
   }
 
   function updateClientDraftAccount(accountId: string, patch: Partial<{ network: Network; handle: string }>) {
@@ -812,21 +891,25 @@ function App() {
   }
 
   function loadPadillaExample() {
-    setClientDraft({
+    setClientDraft((current) => ({
       name: "Padilla",
       sector: "Marca local",
       language: "Espanol",
       tags: "marca, comercio local, comunidad",
+      assignedUserEmails: current.assignedUserEmails.length ? current.assignedUserEmails : defaultAssigneeEmails,
       accounts: [
         { id: `padilla-${Date.now()}-ig-1`, network: "Instagram", handle: "@padilla" },
         { id: `padilla-${Date.now()}-ig-2`, network: "Instagram", handle: "@padilla.store" },
         { id: `padilla-${Date.now()}-li`, network: "LinkedIn", handle: "Padilla" },
       ],
-    });
+    }));
   }
 
   async function createClientFromModal() {
     if (!clientDraft.name.trim()) return;
+    const assignedUserEmails = uniqueEmails(clientDraft.assignedUserEmails.length ? clientDraft.assignedUserEmails : defaultAssigneeEmails);
+    const assignedUsers = usersFromEmails(database.users, assignedUserEmails);
+    const primaryAssignee = assignedUsers[0] ?? { email: session.email, name: session.name, role: session.role };
     const slug = clientDraft.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || `cliente-${Date.now()}`;
     const draftAccounts = clientDraft.accounts
       .filter((account) => account.handle.trim())
@@ -845,13 +928,14 @@ function App() {
     if (realBackendEnabled) {
       try {
         const result = await postJson<{ client: { id: string }; accounts: Array<Record<string, unknown>> }>("/api/create-client", {
-          ownerEmail: session.email,
-          ownerName: session.name,
-          ownerRole: session.role,
+          ownerEmail: primaryAssignee.email,
+          ownerName: primaryAssignee.name,
+          ownerRole: primaryAssignee.role,
           name: clientDraft.name.trim(),
           sector: clientDraft.sector.trim() || "Nuevo cliente",
           language: clientDraft.language.trim() || "Espanol",
           tags: clientDraft.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+          assignedUsers,
           accounts: draftAccounts,
         });
         clientId = result.client.id;
@@ -869,8 +953,8 @@ function App() {
       language: clientDraft.language.trim() || "Espanol",
       tags: clientDraft.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
       accounts,
-      ownerEmail: session.email,
-      assignedUserEmails: [session.email],
+      ownerEmail: primaryAssignee.email,
+      assignedUserEmails,
     };
     setDatabase((current) => ({ ...current, clients: [...current.clients, client] }));
     setSelectedClientId(client.id);
@@ -898,6 +982,8 @@ function App() {
 
   function addClient() {
     if (!isAdmin || !newClient.name.trim()) return;
+    const assignedUserEmails = uniqueEmails(newClient.assignedUserEmails.length ? newClient.assignedUserEmails : defaultAssigneeEmails);
+    const primaryAssignee = usersFromEmails(database.users, assignedUserEmails)[0] ?? { email: session.email, name: session.name, role: session.role };
     const id = newClient.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || `cliente-${Date.now()}`;
     const client: Client = {
       id: `${id}-${Date.now()}`,
@@ -906,11 +992,11 @@ function App() {
       language: newClient.language.trim() || "Espanol",
       tags: ["marca", "contenido"],
       accounts: [],
-      ownerEmail: session.email,
-      assignedUserEmails: [session.email],
+      ownerEmail: primaryAssignee.email,
+      assignedUserEmails,
     };
     setDatabase((current) => ({ ...current, clients: [...current.clients, client] }));
-    setNewClient({ name: "", sector: "", language: "Espanol" });
+    setNewClient({ name: "", sector: "", language: "Espanol", assignedUserEmails: defaultAssigneeEmails });
     setSelectedClientId(client.id);
     setSelectedAccountIds([]);
     setComposer((current) => ({ ...current, accountId: "" }));
@@ -954,6 +1040,7 @@ function App() {
               <span>
                 <strong>{client.name}</strong>
                 <small>{client.accounts.length} cuentas</small>
+                <small className="client-assignee">{formatClientAssignees(client, database.users)}</small>
               </span>
             </button>
           )) : <div className="empty-client-list"><Users size={18} /><span>No tienes clientes asignados.</span></div>}
@@ -1073,7 +1160,7 @@ function App() {
         ) : activePanel === "descubrimiento" ? (
           <DiscoveryPanel selectedClient={selectedClient} selectedTag={selectedTag} setSelectedTag={setSelectedTag} newTag={newTag} setNewTag={setNewTag} addTopic={addTopic} filteredArticles={filteredArticles} translateArticles={translateArticles} setTranslateArticles={setTranslateArticles} setSelectedArticle={setSelectedArticle} />
         ) : (
-          <AdminPanel clients={clients} networks={networks} databaseStats={databaseStats} newClient={newClient} setNewClient={setNewClient} adminAccount={adminAccount} setAdminAccount={setAdminAccount} addClient={addClient} addAccount={addAccount} resetDemoDatabase={resetDemoDatabase} />
+          <AdminPanel clients={clients} users={assignableUsers} defaultAssigneeEmails={defaultAssigneeEmails} networks={networks} databaseStats={databaseStats} newClient={newClient} setNewClient={setNewClient} toggleNewClientAssignee={toggleNewClientAssignee} adminAccount={adminAccount} setAdminAccount={setAdminAccount} addClient={addClient} addAccount={addAccount} updateClientAssignees={updateClientAssignees} resetDemoDatabase={resetDemoDatabase} />
         )}
       </section>
 
@@ -1095,8 +1182,10 @@ function App() {
       {isClientModalOpen ? (
         <ClientModal
           clientDraft={clientDraft}
+          users={assignableUsers}
           networks={networks}
           setClientDraft={setClientDraft}
+          toggleAssignee={toggleClientDraftAssignee}
           updateAccount={updateClientDraftAccount}
           addAccount={addClientDraftAccount}
           removeAccount={removeClientDraftAccount}
@@ -1109,10 +1198,12 @@ function App() {
   );
 }
 
-function ClientModal({ clientDraft, networks, setClientDraft, updateAccount, addAccount, removeAccount, loadPadillaExample, onClose, onCreate }: {
+function ClientModal({ clientDraft, users, networks, setClientDraft, toggleAssignee, updateAccount, addAccount, removeAccount, loadPadillaExample, onClose, onCreate }: {
   clientDraft: ClientDraft;
+  users: StoredUser[];
   networks: Network[];
   setClientDraft: React.Dispatch<React.SetStateAction<ClientDraft>>;
+  toggleAssignee: (email: string) => void;
   updateAccount: (accountId: string, patch: Partial<{ network: Network; handle: string }>) => void;
   addAccount: () => void;
   removeAccount: (accountId: string) => void;
@@ -1121,7 +1212,7 @@ function ClientModal({ clientDraft, networks, setClientDraft, updateAccount, add
   onCreate: () => void;
 }) {
   const hasValidAccount = clientDraft.accounts.some((account) => account.handle.trim());
-  const canCreate = Boolean(clientDraft.name.trim() && hasValidAccount);
+  const canCreate = Boolean(clientDraft.name.trim() && hasValidAccount && clientDraft.assignedUserEmails.length);
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Crear cliente">
@@ -1149,6 +1240,14 @@ function ClientModal({ clientDraft, networks, setClientDraft, updateAccount, add
             <input value={clientDraft.tags} onChange={(event) => setClientDraft((current) => ({ ...current, tags: event.target.value }))} placeholder="marca, contenido, comunidad" />
           </label>
         </div>
+
+        <UserAssignmentPicker
+          title="Responsable interno"
+          description="Marca uno o varios usuarios de la empresa que podran ver y trabajar este cliente."
+          users={users}
+          selectedEmails={clientDraft.assignedUserEmails}
+          onToggle={toggleAssignee}
+        />
 
         <div className="account-builder">
           <div className="panel-heading compact">
@@ -1395,18 +1494,56 @@ function DiscoveryPanel({ selectedClient, selectedTag, setSelectedTag, newTag, s
   );
 }
 
-function AdminPanel({ clients, networks, databaseStats, newClient, setNewClient, adminAccount, setAdminAccount, addClient, addAccount, resetDemoDatabase }: {
+function UserAssignmentPicker({ title, description, users, selectedEmails, onToggle }: {
+  title: string;
+  description?: string;
+  users: StoredUser[];
+  selectedEmails: string[];
+  onToggle: (email: string) => void;
+}) {
+  const selectedSet = new Set(selectedEmails);
+
+  return (
+    <div className="assignee-picker">
+      <div>
+        <strong>{title}</strong>
+        {description ? <small>{description}</small> : null}
+      </div>
+      <div className="assignee-chip-row">
+        {users.map((user) => (
+          <button
+            className={`assignee-chip ${selectedSet.has(user.email) ? "active" : ""}`}
+            key={user.email}
+            type="button"
+            onClick={() => onToggle(user.email)}
+          >
+            <span>{user.name}</span>
+            <small>{user.role === "admin" ? "Admin" : "CM"}</small>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AdminPanel({ clients, users, defaultAssigneeEmails, networks, databaseStats, newClient, setNewClient, toggleNewClientAssignee, adminAccount, setAdminAccount, addClient, addAccount, updateClientAssignees, resetDemoDatabase }: {
   clients: Client[];
+  users: StoredUser[];
+  defaultAssigneeEmails: string[];
   networks: Network[];
   databaseStats: { users: number; clients: number; accounts: number; posts: number };
-  newClient: { name: string; sector: string; language: string };
-  setNewClient: (value: { name: string; sector: string; language: string }) => void;
+  newClient: NewClientDraft;
+  setNewClient: (value: NewClientDraft) => void;
+  toggleNewClientAssignee: (email: string) => void;
   adminAccount: { clientId: string; network: Network; handle: string };
   setAdminAccount: (value: { clientId: string; network: Network; handle: string }) => void;
   addClient: () => void;
   addAccount: () => void;
+  updateClientAssignees: (clientId: string, email: string) => void;
   resetDemoDatabase: () => void;
 }) {
+  const newClientAssignedEmails = newClient.assignedUserEmails.length ? newClient.assignedUserEmails : defaultAssigneeEmails;
+
   return (
     <section className="admin-panel">
       <div className="panel-heading"><div><p className="eyebrow">Admin</p><h2>Vincular redes y revisar clientes</h2></div><Settings size={19} /></div>
@@ -1422,11 +1559,48 @@ function AdminPanel({ clients, networks, databaseStats, newClient, setNewClient,
         <label>Idioma<input value={newClient.language} onChange={(event) => setNewClient({ ...newClient, language: event.target.value })} /></label>
         <button className="primary-button" type="button" onClick={addClient}><Plus size={16} />Crear cliente</button>
       </div>
+      <UserAssignmentPicker
+        title="Asignar nuevo cliente a"
+        description="El cliente sera visible para los usuarios marcados."
+        users={users}
+        selectedEmails={newClientAssignedEmails}
+        onToggle={toggleNewClientAssignee}
+      />
       <div className="admin-grid">
         <label>Cliente<select value={adminAccount.clientId} onChange={(event) => setAdminAccount({ ...adminAccount, clientId: event.target.value })}>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>
         <label>Red social<select value={adminAccount.network} onChange={(event) => setAdminAccount({ ...adminAccount, network: event.target.value as Network })}>{networks.map((network) => <option key={network}>{network}</option>)}</select></label>
         <label>Cuenta<input value={adminAccount.handle} onChange={(event) => setAdminAccount({ ...adminAccount, handle: event.target.value })} placeholder="@cuenta o nombre de pagina" /></label>
         <button className="primary-button" type="button" onClick={addAccount}><Plus size={16} />Vincular cuenta</button>
+      </div>
+      <div className="assignment-board">
+        <div className="panel-heading compact">
+          <div><p className="eyebrow">Responsables</p><h2>Asignacion de clientes</h2></div>
+          <Users size={18} />
+        </div>
+        {clients.map((client) => (
+          <div className="assignment-row" key={client.id}>
+            <div>
+              <strong>{client.name}</strong>
+              <small>{formatClientAssignees(client, users)}</small>
+            </div>
+            <div className="assignee-chip-row compact">
+              {users.map((user) => {
+                const selected = clientAssigneeEmails(client).includes(user.email);
+                return (
+                  <button
+                    className={`assignee-chip ${selected ? "active" : ""}`}
+                    key={`${client.id}-${user.email}`}
+                    type="button"
+                    onClick={() => updateClientAssignees(client.id, user.email)}
+                  >
+                    <span>{user.name}</span>
+                    <small>{user.role === "admin" ? "Admin" : "CM"}</small>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
       <div className="network-catalog">{networks.map((network) => <span key={network}><NetworkBadge network={network} />{network}</span>)}</div>
       <button className="ghost-button danger-lite" type="button" onClick={resetDemoDatabase}>Reiniciar BBDD demo</button>
